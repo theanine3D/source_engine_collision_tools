@@ -14,7 +14,7 @@ Note that all of the "Generate" features support the Decimate Ratio setting, to 
 - **Generate Collision via Bisection** - Generate a Source Engine-compliant collision model for every currently selected object, by using Blender's own built-in Bisect tool to divide up the model into sections first.
 - **Generate Collision from Faces** - Generate a Source Engine-compliant collision model for every currently selected object, based on the mesh's faces/polygons.
 - **Generate Collision via UV Map** - Generates a collision mesh for the currently selected objects, based on each object's UV Map. Each UV island becomes a separate hull.
-- **Generate Collision via Fracture** - This operator uses the Cell Fracture addon built into Blender to generate more accurate and performant collision meshes for Source Engine. However, unlike the above operator, it is intended to be used on individual props, not entire scenes at once. Works best on fully sealed objects with no holes or non-manifold geometry.
+- **Generate Collision via Fracture** - This operator uses the Cell Fracture addon built into Blender to generate collision. Best used on individual props, not entire scenes at once. Works best on fully sealed objects with no holes or non-manifold geometry.
   - This collision method is unique in that it also creates a gap between collision hulls to prevent overlapping. The size of the gap is determined by the "Gap Width" setting
   - Attempts to generate only the amount of hulls specified by the "Fracture Target" setting. ie. A "Fracture Target" of 4 will try to split up the model into only 4 parts.
   - Note that the Cell Fracture addon needs to be enabled in your Blender preferences first!
