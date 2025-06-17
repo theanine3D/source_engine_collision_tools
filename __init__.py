@@ -11,7 +11,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (2, 0, 0),
+    "version": (2, 1, 0),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -188,6 +188,13 @@ def check_for_selected():
     else:
         return False
 
+def get_current_mode():
+    obj = bpy.context.active_object
+    
+    if obj is None:
+        return None
+    
+    return obj.mode
 
 def get_avg_length(obj):
     object = bpy.context.active_object
@@ -528,6 +535,42 @@ def set_origin(location):
     bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
     bpy.context.scene.cursor.location = saved_location
 
+def count_loose_geometry(obj):
+    
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    
+    # Get all loose parts by finding connected vertices
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    
+    # Tag all vertices as not visited
+    visited = set()
+    island_count = 0
+    
+    # Iterate through all vertices
+    for vert in bm.verts:
+        if vert.index not in visited:
+            # Found a new island
+            island_count += 1
+            # Do a BFS to find all connected vertices
+            queue = [vert]
+            while queue:
+                current_vert = queue.pop()
+                if current_vert.index not in visited:
+                    visited.add(current_vert.index)
+                    # Add all connected vertices to queue
+                    for edge in current_vert.link_edges:
+                        linked_vert = edge.other_vert(current_vert)
+                        if linked_vert.index not in visited:
+                            queue.append(linked_vert)
+    
+    # Clean up
+    bm.free()
+    
+    return island_count
+
 
 # Generate Collision Mesh operator
 
@@ -541,9 +584,9 @@ class GenerateFromFaces(bpy.types.Operator):
     def execute(self, context):
 
         objs = check_for_selected()
-        if objs == False:
+        if objs == False or get_current_mode() != "OBJECT":
             display_msg_box(
-                "At least one valid mesh object must be selected.", "Info", "INFO")
+                "At least one valid mesh object must be selected, in Object Mode.", "Info", "INFO")
 
             return {'FINISHED'}
 
@@ -762,9 +805,9 @@ class GenerateFromUVMap(bpy.types.Operator):
 
     def execute(self, context):
         objs = check_for_selected()
-        if objs == False:
+        if objs == False or get_current_mode() != "OBJECT":
             display_msg_box(
-                "At least one mesh object must be selected.", "Info", "INFO")
+                "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
 
             return {'FINISHED'}
 
@@ -952,10 +995,10 @@ class GenerateFromFracture(bpy.types.Operator):
             print("\nCell fracture addon found.\n")
         
         objs = check_for_selected()
-        if objs == False:
+        if objs == False or get_current_mode() != "OBJECT":
 
             display_msg_box(
-                "At least one mesh object must be selected.", "Info", "INFO")
+                "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
             
             bpy.context.preferences.edit.use_global_undo = original_undo
             return {'FINISHED'}
@@ -1114,9 +1157,9 @@ class GenerateFromBisection(bpy.types.Operator):
 
     def execute(self, context):
         objs = check_for_selected()
-        if objs == False:
+        if objs == False or get_current_mode() != "OBJECT":
             display_msg_box(
-                "At least one mesh object must be selected.", "Info", "INFO")
+                "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
 
             return {'FINISHED'}
         
@@ -1546,7 +1589,6 @@ class GenerateFromBisection(bpy.types.Operator):
 
         return {'FINISHED'}
 
-
 # Split Up Collision Mesh operator
 
 
@@ -1559,9 +1601,9 @@ class SplitUpSrcCollision(bpy.types.Operator):
     def execute(self, context):
 
         objs = check_for_selected()
-        if objs == False:
+        if objs == False or get_current_mode() != "OBJECT":
             display_msg_box(
-                "At least one mesh object must be selected.", "Info", "INFO")
+                "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
 
             return {'FINISHED'}
 
@@ -1570,11 +1612,14 @@ class SplitUpSrcCollision(bpy.types.Operator):
 
         if len(objs) >= 1:
             total_part_count = 0
+            active_obj = bpy.context.active_object
+            new_selected = list()
 
             for obj in objs:
                 obj.select_set(False)
 
             for obj in objs:
+
                 bpy.ops.object.select_all(action='DESELECT')
 
                 root_collection = None
@@ -1584,7 +1629,11 @@ class SplitUpSrcCollision(bpy.types.Operator):
                     root_collection = bpy.data.collections.new("Collision Models")
                     bpy.context.scene.collection.children.link(root_collection)
 
-                bpy.context.view_layer.objects.active = obj
+                try:
+                    bpy.context.view_layer.objects.active = obj
+                except:
+                    continue
+
                 obj.select_set(True)
                 original_origin = obj.location.copy()
 
@@ -1650,11 +1699,14 @@ class SplitUpSrcCollision(bpy.types.Operator):
                     else:
                         new_group_collection = bpy.data.collections[new_group_obj.name]
 
-                    root_collection.children.link(new_group_collection)
+                    if new_group_collection.name not in root_collection.children.keys():
+                        root_collection.children.link(new_group_collection)
                     for c in obj_collections:
                         c.objects.unlink(new_group_obj)
 
                     new_group_collection.objects.link(new_group_obj)
+                    if new_group_obj.name in bpy.context.scene.collection.objects.keys():
+                        bpy.context.scene.collection.objects.unlink(new_group_obj)
                     bpy.ops.object.transform_apply(
                         location=False, rotation=True, scale=True)
                     
@@ -1664,6 +1716,7 @@ class SplitUpSrcCollision(bpy.types.Operator):
                     bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
                     bpy.context.scene.cursor.location = original_cursor_location
 
+                    new_selected.append(new_group_obj)
                     new_group_obj.select_set(False)
 
                     hull_groups.pop()
@@ -1676,9 +1729,22 @@ class SplitUpSrcCollision(bpy.types.Operator):
                 if original_name in bpy.data.collections.keys():
                     bpy.data.collections.remove(
                         bpy.data.collections[original_name])
-                for o in bpy.data.objects:
-                    if (original_name + ".") in o.name:
-                        bpy.data.objects.remove(o)
+                for o in hulls:
+                    try:
+                        if o.name in bpy.data.objects.keys():
+                            bpy.data.objects.remove(o)
+                    except:
+                        continue
+            
+            for obj in new_selected:
+                try:
+                    obj.select_set(True)
+                except:
+                    continue
+            try:
+                bpy.context.view_layer.objects.active = new_selected[0]
+            except:
+                bpy.context.view_layer.objects.active = None
 
         total_part_count = str(total_part_count)
         display_msg_box(
@@ -1699,9 +1765,9 @@ class Cleanup_MergeAdjacentSimilars(bpy.types.Operator):
 
     def execute(self, context):
         objs = check_for_selected()
-        if objs == False:
+        if objs == False or get_current_mode() != "OBJECT":
             display_msg_box(
-                "At least one mesh object must be selected.", "Info", "INFO")
+                "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
 
             return {'FINISHED'}
 
@@ -1712,11 +1778,13 @@ class Cleanup_MergeAdjacentSimilars(bpy.types.Operator):
             initial_hull_count = 0
             merged_count = 0
             similarity_threshold = bpy.context.scene.SrcEngCollProperties.Similar_Factor
+            active_obj = bpy.context.active_object
 
             for obj in objs:
                 obj.select_set(False)
 
             for obj in objs:
+                bpy.context.scene.cursor.location = obj.location
                 bpy.ops.object.select_all(action='DESELECT')
 
                 work_obj = obj
@@ -1921,6 +1989,11 @@ class Cleanup_MergeAdjacentSimilars(bpy.types.Operator):
                 # Reset dimensions and apply final transforms
                 bpy.ops.object.transform_apply(
                     location=True, rotation=True, scale=True)
+                set_origin(bpy.context.scene.cursor.location)
+            
+            for obj in objs:
+                obj.select_set(True)
+            bpy.context.view_layer.objects.active = active_obj
 
             display_msg_box(
                 "Processed original " + str(initial_hull_count) + " hull(s).\nMerged " + str(merged_count) + " total hull(s).", "Info", "INFO")
@@ -1939,9 +2012,9 @@ class Cleanup_RemoveThinHulls(bpy.types.Operator):
 
     def execute(self, context):
         objs = check_for_selected()
-        if objs == False:
+        if objs == False or get_current_mode() != "OBJECT":
             display_msg_box(
-                "At least one mesh object must be selected.", "Info", "INFO")
+                "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
 
             return {'FINISHED'}
 
@@ -1951,6 +2024,8 @@ class Cleanup_RemoveThinHulls(bpy.types.Operator):
         if len(objs) >= 1:
             amount_removed = 0
             thin_threshold = bpy.context.scene.SrcEngCollProperties.Thin_Threshold
+            active_obj = bpy.context.active_object
+
             for obj in objs:
                 obj.select_set(False)
 
@@ -2054,9 +2129,13 @@ class Cleanup_RemoveThinHulls(bpy.types.Operator):
                 bpy.ops.object.mode_set(mode='OBJECT')
 
                 amount_removed += len(hulls_to_check) - total_hull_count
+            
+            for obj in objs:
+                obj.select_set(True)
+            bpy.context.view_layer.objects.active = active_obj
+        
             display_msg_box(
                 "Removed " + str(amount_removed) + " hull(s)", "Info", "INFO")
-
         bpy.context.preferences.edit.use_global_undo = original_undo
 
         return {'FINISHED'}
@@ -2072,21 +2151,51 @@ class Cleanup_ForceConvex(bpy.types.Operator):
 
     def execute(self, context):
         objs = check_for_selected()
-        if objs == False:
+        if objs == False or get_current_mode() != "OBJECT":
             display_msg_box(
-                "At least one mesh object must be selected.", "Info", "INFO")
+                "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
 
             return {'FINISHED'}
         
+        active_obj = bpy.context.active_object
+
         total_hull_count = force_convex(objs)
+        for obj in objs:
+            obj.select_set(True)
+        bpy.context.view_layer.objects.active = active_obj
 
         display_msg_box(
             "Processed " + str(total_hull_count) + " hulls.", "Info", "INFO")
 
         return {'FINISHED'}
+    
+
+class Cleanup_CountHulls(bpy.types.Operator):
+    """Counts all loose mesh islands in the selected object(s) and prints out the result, without modifying the mesh(es). Note that this will work on non-collision meshes too"""
+    bl_idname = "object.src_eng_cleanup_count_hulls"
+    bl_label = "Count Hulls"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        objs = check_for_selected()
+        if objs == False or get_current_mode() != "OBJECT":
+            display_msg_box(
+                "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
+
+            return {'FINISHED'}
+        
+        if len(objs) >= 1:
+            total_hull_count = 0
+            
+            for obj in objs:
+                total_hull_count += count_loose_geometry(obj)
+            
+        display_msg_box(
+            "Counted " + str(total_hull_count) + " hull(s).", "Info", "INFO")
+
+        return {'FINISHED'}
 
 # Remove Inside Hulls operator
-
 
 class Cleanup_RemoveInsideHulls(bpy.types.Operator):
     """Removes hulls that are (entirely or mostly) inside other hulls"""
@@ -2096,9 +2205,9 @@ class Cleanup_RemoveInsideHulls(bpy.types.Operator):
 
     def execute(self, context):
         objs = check_for_selected()
-        if objs == False:
+        if objs == False or get_current_mode() != "OBJECT":
             display_msg_box(
-                "At least one valid mesh object must be selected.", "Info", "INFO")
+                "At least one valid mesh object must be selected, in Object Mode.", "Info", "INFO")
 
             return {'FINISHED'}
 
@@ -2106,11 +2215,12 @@ class Cleanup_RemoveInsideHulls(bpy.types.Operator):
         bpy.context.preferences.edit.use_global_undo = False
 
         if len(objs) >= 1:
+            active_obj = bpy.context.active_object
+            
             for obj in objs:
                 obj.select_set(False)
 
             amount_to_remove = 0
-            origin_point = None
 
             for obj in objs:
 
@@ -2202,6 +2312,9 @@ class Cleanup_RemoveInsideHulls(bpy.types.Operator):
                 bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
                 bpy.context.scene.cursor.location = original_cursor_location
 
+            for obj in objs:
+                obj.select_set(True)
+            bpy.context.view_layer.objects.active = active_obj
 
             display_msg_box(
                 "Removed " + str(amount_to_remove) + " hull(s).", "Info", "INFO")
@@ -2287,9 +2400,9 @@ class CopyQCOverrides(bpy.types.Operator):
     def execute(self, context):
         
         objs = check_for_selected()
-        if objs == False:
+        if objs == False or get_current_mode() != "OBJECT":
             display_msg_box(
-                "At least one mesh object must be selected.", "Info", "INFO")
+                "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
 
             return {'FINISHED'}
         
@@ -2321,9 +2434,9 @@ class ClearQCOverrides(bpy.types.Operator):
     def execute(self, context):
         
         objs = check_for_selected()
-        if objs == False:
+        if objs == False or get_current_mode() != "OBJECT":
             display_msg_box(
-                "At least one mesh object must be selected.", "Info", "INFO")
+                "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
 
             return {'FINISHED'}
 
@@ -2344,7 +2457,7 @@ class ClearQCOverrides(bpy.types.Operator):
 # Recommended Settings button
 
 class RecommendedCollSettings(bpy.types.Operator):
-    """Automatically modify the settings below based on the currently selected, active mesh object. Note: This is not foolproof. You may still need to tweak the settings yourself"""
+    """Automatically modify the settings below based on the current active mesh object (ignoring any other selected objects). Note: This is not foolproof. You may still need to tweak the settings yourself"""
     bl_idname = "object.src_eng_recc_settings"
     bl_label = "Recommended Settings"
     bl_options = {'REGISTER'}
@@ -2354,8 +2467,11 @@ class RecommendedCollSettings(bpy.types.Operator):
         if check_for_selected():
 
             obj = bpy.context.active_object
-            if len(obj.data.polygons) == 0:
-                return {'FINISHED'}
+            if obj.type == 'MESH':
+                if len(obj.data.polygons) == 0:
+                    return {'FINISHED'}
+            else:
+                    return {'FINISHED'}
 
             avg_dimensions = 0
             for d in list(obj.dimensions):
@@ -2561,9 +2677,9 @@ class ExportVMF(bpy.types.Operator):
             return {'FINISHED'}
         
         objs = check_for_selected()
-        if objs == False:
+        if objs == False or get_current_mode() != "OBJECT":
             display_msg_box(
-                "At least one mesh object must be selected.", "Info", "INFO")
+                "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
 
             return {'FINISHED'}
 
@@ -2737,50 +2853,6 @@ class CleanupCollection(bpy.types.Operator):
 
         return {'FINISHED'}
 
-class ConvexCut(bpy.types.Operator):
-    """Combines the bisect and convex hull functions together, enabling the user to cut up the model and instantly convert a cut piece into a convex hull after every cut"""
-    bl_idname = "object.convex_cut"
-    bl_label = "Convex Cut"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    initial_vertex_count: bpy.props.IntProperty()
-
-    def invoke(self, context, event):
-        if context.active_object:
-            context.window_manager.modal_handler_add(self)
-            self.initial_vertex_count = len(context.object.data.vertices)
-            bpy.ops.mesh.bisect('INVOKE_DEFAULT')
-            return {'RUNNING_MODAL'}
-        else:
-            self.report({'WARNING'}, "No active object, could not finish")
-            return {'CANCELLED'}
-    
-    def modal(self, context, event):
-        if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
-            bpy.ops.object.mode_set(mode='OBJECT')
-            if len(context.active_object.data.vertices) != self.initial_vertex_count:
-                bpy.ops.object.mode_set(mode='EDIT')
-                print("\nNow in edit mode...\n")
-                bpy.ops.mesh.select_mode(type='VERT')
-                print(f"Selected vertex count: {len([v for v in bpy.context.active_object.data.vertices if v.select])}")
-                bpy.ops.ed.undo_push(message="Bisect Operation")
-                bpy.ops.mesh.rip('INVOKE_DEFAULT', use_fill=False, use_accurate=True)
-                bpy.ops.mesh.select_linked(delimit=set())
-                bpy.ops.mesh.split()
-                bpy.ops.mesh.convex_hull('INVOKE_DEFAULT')
-                bpy.ops.object.mode_set(mode='OBJECT')
-                bpy.ops.object.shade_smooth()
-                bpy.ops.object.mode_set(mode='EDIT')
-                bpy.ops.mesh.select_all(action='DESELECT')
-                bpy.ops.mesh.select_non_manifold()  
-                bpy.ops.mesh.select_linked(delimit=set())
-                return {'FINISHED'}
-        if event.type == 'RIGHTMOUSE':
-            return {'FINISHED'}
-
-        return {'RUNNING_MODAL'}
-
-
 
 # End classes
 
@@ -2798,20 +2870,17 @@ ops = (
     Cleanup_RemoveThinHulls,
     Cleanup_ForceConvex,
     Cleanup_RemoveInsideHulls,
+    Cleanup_CountHulls,
     RecommendedCollSettings,
     CleanupCollection,
     UpdateVMF,
-    ExportVMF,
-    ConvexCut
+    ExportVMF
 )
 
 
 def menu_func(self, context):
     for op in ops:
         self.layout.operator(op.bl_idname)
-
-def menu_func_mesh(self, context):
-        self.layout.operator(ConvexCut.bl_idname)
 
 # MATERIALS PANEL
 
@@ -2834,7 +2903,7 @@ class MESH_PT_src_eng_coll_gen(bpy.types.Panel):
         layout = self.layout
 
 
-class SrcEngCollGen_SubPanel_Generate(bpy.types.Panel):
+class MESH_PT_SrcEngCollGen_SubPanel_Generate(bpy.types.Panel):
     bl_parent_id = "MESH_PT_src_eng_coll_gen"
     bl_label = "Generate"
     bl_space_type = 'PROPERTIES'
@@ -2887,7 +2956,7 @@ class SrcEngCollGen_SubPanel_Generate(bpy.types.Panel):
         rowBisectGen3 = boxBisectGen.row()
         rowBisectGen3.operator("object.src_eng_gen_bisect")
 
-class SrcEngCollGen_SubPanel_Cleanup(bpy.types.Panel):
+class MESH_PT_SrcEngCollGen_SubPanel_Cleanup(bpy.types.Panel):
     bl_parent_id = "MESH_PT_src_eng_coll_gen"
     bl_label = "Cleanup"
     bl_options = {"DEFAULT_CLOSED"}
@@ -2912,6 +2981,7 @@ class SrcEngCollGen_SubPanel_Cleanup(bpy.types.Panel):
         rowCleanup6 = boxCleanup.row()
         rowCleanup7 = boxCleanup.row()
         rowCleanup8 = boxCleanup.row()
+        rowCleanup9 = boxCleanup.row()
 
         rowCleanup1_Label.label(text="Similarity")
         rowCleanup1.prop(
@@ -2923,12 +2993,13 @@ class SrcEngCollGen_SubPanel_Cleanup(bpy.types.Panel):
             bpy.context.scene.SrcEngCollProperties, "Thin_Threshold")
         rowCleanup4.operator("object.src_eng_cleanup_remove_thin_hulls")
         rowCleanup5_Label.label(text="Other")
-        rowCleanup6.operator("object.src_eng_cleanup_force_convex")
-        rowCleanup7.operator("object.src_eng_cleanup_remove_inside")
-        rowCleanup5.operator("object.src_eng_split")
+        rowCleanup5.operator("object.src_eng_cleanup_force_convex")
+        rowCleanup6.operator("object.src_eng_cleanup_remove_inside")
+        rowCleanup7.operator("object.src_eng_split")
         rowCleanup8.operator("object.src_eng_cleanup_collection")
+        rowCleanup9.operator("object.src_eng_cleanup_count_hulls")
 
-class SrcEngCollGen_SubPanel_Compile(bpy.types.Panel):
+class MESH_PT_SrcEngCollGen_SubPanel_Compile(bpy.types.Panel):
     bl_parent_id = "MESH_PT_src_eng_coll_gen"
     bl_label = "Compile"
     bl_options = {"DEFAULT_CLOSED"}
@@ -2986,9 +3057,9 @@ class SrcEngCollGen_SubPanel_Compile(bpy.types.Panel):
 
 classes = (
     MESH_PT_src_eng_coll_gen,
-    SrcEngCollGen_SubPanel_Generate,
-    SrcEngCollGen_SubPanel_Cleanup,
-    SrcEngCollGen_SubPanel_Compile,
+    MESH_PT_SrcEngCollGen_SubPanel_Generate,
+    MESH_PT_SrcEngCollGen_SubPanel_Cleanup,
+    MESH_PT_SrcEngCollGen_SubPanel_Compile,
     SrcEngCollProperties,
     GenerateFromFaces,
     GenerateFromUVMap,
@@ -3002,18 +3073,17 @@ classes = (
     Cleanup_RemoveThinHulls,
     Cleanup_ForceConvex,
     Cleanup_RemoveInsideHulls,
+    Cleanup_CountHulls,
     CleanupCollection,
     RecommendedCollSettings,
     UpdateVMF,
-    ExportVMF,
-    ConvexCut
+    ExportVMF
 )
 
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.VIEW3D_MT_edit_mesh.append(menu_func_mesh)
 
     bpy.types.Scene.SrcEngCollProperties = bpy.props.PointerProperty(
         type=SrcEngCollProperties)
@@ -3022,7 +3092,6 @@ def register():
 def unregister():
     for cls in classes:
         bpy.utils.unregister_class(cls)
-    bpy.types.VIEW3D_MT_edit_mesh.remove(menu_func_mesh)
 
     del bpy.types.Scene.SrcEngCollProperties
 
