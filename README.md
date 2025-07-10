@@ -70,5 +70,8 @@ This video below shows some newer features that have been added since the previo
 The maps below were created using Source Engine Collision Tools. (If you're a mapper using my addon for your maps, send me a message if you want to list your map here!)
 
 - #### Saturn Valley - TF2 map by Theanine3D
-
   - [![YouTube Video](https://github.com/user-attachments/assets/28a24da2-f792-4ab3-abb9-473d3a75bfc0)](https://www.youtube.com/watch?v=jbJhX8MaSDQ)
+
+- #### Destiny Islands - Garry's Mod map by Theanine3D
+  - [![YouTube Video](https://github.com/user-attachments/assets/57a5d834-cf59-41b4-ba26-dbfc92e0772a)](https://www.youtube.com/watch?v=bWywVC6aR9M)
+
