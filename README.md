@@ -67,8 +67,7 @@ This video below shows some newer features that have been added since the previo
 [![YouTube Video](https://github.com/user-attachments/assets/7244d17f-90cb-40fc-9117-e9aa341ea8d5)](https://youtu.be/yWF5ngntf5A)
 
 ### Gallery
-The maps below were created using Source Engine Collision Tools. (If you're a mapper using my addon for your maps, send me a message if you want to list your map here!)
-
+The maps below were created using Source Engine Collision Tools. They are great examples of what this addon makes possible.
 - #### Saturn Valley - TF2 map by Theanine3D
   - [![YouTube Video](https://github.com/user-attachments/assets/28a24da2-f792-4ab3-abb9-473d3a75bfc0)](https://www.youtube.com/watch?v=jbJhX8MaSDQ)
 
