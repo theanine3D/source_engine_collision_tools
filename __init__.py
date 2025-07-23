@@ -2179,7 +2179,7 @@ class Cleanup_RemoveThinHulls(bpy.types.Operator):
 # Merge Thin Hulls operator
 
 class Cleanup_MergeThinHulls(bpy.types.Operator):
-    """Merges thin hulls with surrounding or adjacent hulls (if any), based on the Thin Threshold and Merge Distance settings"""
+    """Merges thin hulls with adjacent hulls (if any), based on the Thin Threshold setting"""
     bl_idname = "object.src_eng_cleanup_merge_thin_hulls"
     bl_label = "Merge Thin Hulls"
     bl_options = {'REGISTER'}
@@ -2197,7 +2197,6 @@ class Cleanup_MergeThinHulls(bpy.types.Operator):
 
         if len(objs) >= 1:
             amount_merged = 0
-            thin_threshold = bpy.context.scene.SrcEngCollProperties.Thin_Threshold
             merge_distance = bpy.context.scene.SrcEngCollProperties.Merge_Distance
 
             active_obj = bpy.context.active_object
@@ -2213,7 +2212,7 @@ class Cleanup_MergeThinHulls(bpy.types.Operator):
                 bpy.context.view_layer.objects.active = obj
                 obj.select_set(True)
 
-                amount_merged += select_thin_hulls(obj, thin_threshold)
+                amount_merged += select_thin_hulls(obj, 0.0001)
                 if amount_merged > 0:
                     bpy.ops.object.mode_set(mode='EDIT')
                     bpy.ops.mesh.remove_doubles(threshold=merge_distance, use_unselected=True)
