@@ -2170,7 +2170,7 @@ class Cleanup_RemoveThinHulls(bpy.types.Operator):
             bpy.context.view_layer.objects.active = active_obj
         
             display_msg_box(
-                "Removed " + str(amount_removed) + " hull(s).", "Info", "INFO")
+                "Removed " + str(amount_removed) + " thin hull(s).", "Info", "INFO")
         bpy.context.preferences.edit.use_global_undo = original_undo
 
         return {'FINISHED'}
@@ -2229,7 +2229,7 @@ class Cleanup_MergeThinHulls(bpy.types.Operator):
             bpy.context.view_layer.objects.active = active_obj
         
             display_msg_box(
-                "Merged " + str(amount_merged) + " hull(s) with adjacent hulls (if any).", "Info", "INFO")
+                "Merged " + str(amount_merged) + " thin hull(s) with adjacent hulls (if any).", "Info", "INFO")
         bpy.context.preferences.edit.use_global_undo = original_undo
 
         return {'FINISHED'}
@@ -2281,7 +2281,7 @@ class Cleanup_FindThinHulls(bpy.types.Operator):
             bpy.context.view_layer.objects.active = active_obj
         
             display_msg_box(
-                "Selected " + str(amount_selected) + " hull(s).", "Info", "INFO")
+                "Selected " + str(amount_selected) + " thin hull(s).", "Info", "INFO")
         bpy.context.preferences.edit.use_global_undo = original_undo
 
         return {'FINISHED'}
