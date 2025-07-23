@@ -11,7 +11,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (2, 1, 0),
+    "version": (2, 2, 0),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -570,6 +570,119 @@ def count_loose_geometry(obj):
     bm.free()
     
     return island_count
+
+def isnan(var):
+    return var != var
+
+def get_hull_volumes(obj):
+    """Calculate volumes of all convex hulls in the mesh."""
+    if not obj or obj.type != 'MESH':
+        return None
+
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+
+    hull_islands = []
+    visited = set()
+
+    for face in bm.faces:
+        if face.index in visited:
+            continue
+
+        # Get all connected faces (this island)
+        island_faces = []
+        face_indices = set()
+        stack = [face]
+
+        while stack:
+            current_face = stack.pop()
+            if current_face.index in visited:
+                continue
+            visited.add(current_face.index)
+            island_faces.append(current_face)
+            face_indices.add(current_face.index)
+
+            # Add adjacent faces
+            for edge in current_face.edges:
+                for neighbor in edge.link_faces:
+                    if neighbor.index not in visited:
+                        stack.append(neighbor)
+
+        # Store face indices and BMesh faces (temporarily)
+        hull_islands.append((face_indices, island_faces))
+
+    # Calculate volume for each hull
+    hull_volumes = []
+    for face_indices, island_faces in hull_islands:
+        # Create a temporary BMesh to calculate volume
+        temp_bm = bmesh.new()
+        vert_map = {}  # To maintain vertex sharing
+        
+        for face in island_faces:
+            new_verts = []
+            for v in face.verts:
+                if v.index not in vert_map:
+                    vert_map[v.index] = temp_bm.verts.new(v.co)
+                new_verts.append(vert_map[v.index])
+            temp_bm.faces.new(new_verts)
+        
+        # Calculate volume
+        temp_bm.faces.ensure_lookup_table()
+        temp_bm.verts.ensure_lookup_table()
+        volume = temp_bm.calc_volume()
+        temp_bm.free()
+        
+        if not isnan(volume):
+            hull_volumes.append((face_indices, volume))
+
+    bm.free()
+    return hull_volumes
+
+def select_thin_hulls(obj, threshold=0.01):
+    """Selects thin hulls based on volume threshold."""
+    hull_volumes = get_hull_volumes(obj)
+    if not hull_volumes:
+        print("No valid hulls found")
+        return False
+
+    # Calculate average volume
+    total_volume = sum(vol for _, vol in hull_volumes)
+    avg_volume = total_volume / len(hull_volumes)
+    print(f"Average hull volume: {avg_volume}")
+
+    # Find thin hulls (volume <= threshold * average)
+    thin_face_indices = set()
+    thin_hull_count = 0
+    for face_indices, volume in hull_volumes:
+        if volume <= threshold * avg_volume:
+            thin_face_indices.update(face_indices)
+            thin_hull_count += 1
+
+    if not thin_face_indices:
+        print("No thin hulls found")
+        return 0
+
+    print(f"Found {len(thin_face_indices)} faces in thin hulls (<= {threshold*100}% of average volume)")
+
+    # Switch to edit mode and select thin hulls
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.reveal()
+    bpy.ops.mesh.select_mode(type='FACE')
+    bpy.ops.mesh.select_all(action='DESELECT')
+
+    # Select thin faces using their indices
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    
+    for face in bm.faces:
+        if face.index in thin_face_indices:
+            face.select = True
+
+    bmesh.update_edit_mesh(obj.data)
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    return thin_hull_count
 
 
 # Generate Collision Mesh operator
@@ -1613,6 +1726,9 @@ class SplitUpSrcCollision(bpy.types.Operator):
         if len(objs) >= 1:
             total_part_count = 0
             active_obj = bpy.context.active_object
+            if active_obj.type != "MESH":
+                active_obj = objs[0]
+                
             new_selected = list()
 
             for obj in objs:
@@ -1779,6 +1895,8 @@ class Cleanup_MergeAdjacentSimilars(bpy.types.Operator):
             merged_count = 0
             similarity_threshold = bpy.context.scene.SrcEngCollProperties.Similar_Factor
             active_obj = bpy.context.active_object
+            if active_obj.type != "MESH":
+                active_obj = objs[0]
 
             for obj in objs:
                 obj.select_set(False)
@@ -2005,7 +2123,7 @@ class Cleanup_MergeAdjacentSimilars(bpy.types.Operator):
 # Remove Thin Hulls operator
 
 class Cleanup_RemoveThinHulls(bpy.types.Operator):
-    """Removes hulls that are much smaller than the average hull volume, based on the Thin Threshold setting"""
+    """Removes thin hulls, based on the Thin Threshold setting"""
     bl_idname = "object.src_eng_cleanup_remove_thin_hulls"
     bl_label = "Remove Thin Hulls"
     bl_options = {'REGISTER'}
@@ -2025,6 +2143,8 @@ class Cleanup_RemoveThinHulls(bpy.types.Operator):
             amount_removed = 0
             thin_threshold = bpy.context.scene.SrcEngCollProperties.Thin_Threshold
             active_obj = bpy.context.active_object
+            if active_obj.type != "MESH":
+                active_obj = objs[0]
 
             for obj in objs:
                 obj.select_set(False)
@@ -2034,111 +2154,138 @@ class Cleanup_RemoveThinHulls(bpy.types.Operator):
 
                 bpy.context.view_layer.objects.active = obj
                 obj.select_set(True)
-                original_name = obj.name
-                total_hull_count = 0
 
-                # Make sure no faces are selected
-                bpy.ops.object.mode_set(mode='EDIT')
-                bpy.ops.mesh.reveal()
-                bpy.ops.mesh.select_mode(type='VERT')
-                bpy.ops.mesh.select_all(action='DESELECT')
-                bpy.ops.object.mode_set(mode='OBJECT')
-                bpy.ops.object.transform_apply(
-                    location=False, rotation=True, scale=True)
+                amount_removed += select_thin_hulls(obj, thin_threshold)
+                if amount_removed > 0:
+                    bpy.ops.object.mode_set(mode='EDIT')
+                    bpy.ops.mesh.delete(type='FACE')
+                    bpy.ops.object.mode_set(mode='OBJECT')
 
-                # Select all hulls and separate them into separate objects
-                bpy.ops.object.mode_set(mode='EDIT')
-                bpy.ops.mesh.select_all(action='SELECT')
-                bpy.ops.mesh.dissolve_limited(
-                    angle_limit=0.0872665, delimit={'NORMAL'})
-                bpy.ops.mesh.quads_convert_to_tris(
-                    quad_method='BEAUTY', ngon_method='BEAUTY')
-                bpy.ops.mesh.normals_make_consistent(inside=False)
-                bpy.ops.mesh.select_all(action='DESELECT')
-                bpy.ops.object.mode_set(mode='OBJECT')
+                    # Cleanup
+                    bpy.ops.object.transform_apply(
+                        location=False, rotation=True, scale=True)
 
-                # Begin Bmesh processing
-                me = obj.data
-                bm = bmesh.new()
-                bm_processed = bmesh.new()
-
-                bm.from_mesh(me)
-                hulls = [hull for hull in bmesh_get_hulls(
-                    bm, verts=bm.verts)]
-
-                hulls_to_check = list()
-
-                # Create individual hull bmeshes
-                for hull in hulls:
-                    bm_hull = bmesh.new()
-
-                    # Add vertices to individual bmesh hull
-                    for vert in hull:
-                        bmesh.ops.create_vert(bm_hull, co=vert.co)
-
-                    # Generate convex hull
-                    ch = bmesh.ops.convex_hull(
-                        bm_hull, input=bm_hull.verts, use_existing_faces=False)
-                    bmesh.ops.delete(
-                        bm_hull,
-                        geom=list(set(ch["geom_unused"] + ch["geom_interior"])),
-                        context='VERTS')
-
-                    # Add the processed hull to list for volume checking
-                    hulls_to_check.append(bm_hull)
-
-                avg_volume = sum([bm_hull.calc_volume(signed=False)
-                                for bm_hull in hulls_to_check]) / len(hulls_to_check)
-
-                # Check volume if below threshold
-                for bm_hull in hulls_to_check:
-                    vol = bm_hull.calc_volume(signed=False)
-                    if vol > (thin_threshold * avg_volume):
-                        bmesh_join(bm_processed, bm_hull)
-                        total_hull_count += 1
-                    bm_hull.clear()
-                    bm_hull.free()
-
-                bm_processed.to_mesh(me)
-                me.update()
-                bm.clear()
-                bm.free()
-                bm_processed.clear()
-                bm_processed.free()
-
-                # End Bmesh processing
-
-                # Rejoin and clean up
-                bpy.context.active_object.name = original_name
-                bpy.ops.object.transform_apply(
-                    location=False, rotation=True, scale=True)
-                bpy.ops.object.shade_smooth()
-
-                # Remove non-manifolds
-                bpy.ops.object.mode_set(mode='EDIT')
-                bpy.ops.mesh.select_mode(
-                    use_extend=False, use_expand=False, type='VERT')
-                bpy.ops.mesh.select_all(action='DESELECT')
-                bpy.ops.mesh.select_non_manifold()
-                bpy.ops.mesh.select_linked(delimit=set())
-                bpy.ops.mesh.delete(type='VERT')
-                bpy.ops.mesh.select_all(action='DESELECT')
-                bpy.ops.mesh.select_all(action='SELECT')
-                bpy.ops.mesh.normals_make_consistent(inside=False)
-                bpy.ops.mesh.select_all(action='DESELECT')
-                bpy.ops.object.mode_set(mode='OBJECT')
-
-                amount_removed += len(hulls_to_check) - total_hull_count
-            
             for obj in objs:
                 obj.select_set(True)
             bpy.context.view_layer.objects.active = active_obj
         
             display_msg_box(
-                "Removed " + str(amount_removed) + " hull(s)", "Info", "INFO")
+                "Removed " + str(amount_removed) + " hull(s).", "Info", "INFO")
         bpy.context.preferences.edit.use_global_undo = original_undo
 
         return {'FINISHED'}
+
+
+# Merge Thin Hulls operator
+
+class Cleanup_MergeThinHulls(bpy.types.Operator):
+    """Merges thin hulls with surrounding or adjacent hulls (if any), based on the Thin Threshold and Merge Distance settings"""
+    bl_idname = "object.src_eng_cleanup_merge_thin_hulls"
+    bl_label = "Merge Thin Hulls"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        objs = check_for_selected()
+        if objs == False or get_current_mode() != "OBJECT":
+            display_msg_box(
+                "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
+
+            return {'FINISHED'}
+
+        original_undo = bpy.context.preferences.edit.use_global_undo
+        bpy.context.preferences.edit.use_global_undo = False
+
+        if len(objs) >= 1:
+            amount_merged = 0
+            thin_threshold = bpy.context.scene.SrcEngCollProperties.Thin_Threshold
+            merge_distance = bpy.context.scene.SrcEngCollProperties.Merge_Distance
+
+            active_obj = bpy.context.active_object
+            if active_obj.type != "MESH":
+                active_obj = objs[0]
+
+            for obj in objs:
+                obj.select_set(False)
+
+            for obj in objs:
+                bpy.ops.object.select_all(action='DESELECT')
+
+                bpy.context.view_layer.objects.active = obj
+                obj.select_set(True)
+
+                amount_merged += select_thin_hulls(obj, thin_threshold)
+                if amount_merged > 0:
+                    bpy.ops.object.mode_set(mode='EDIT')
+                    bpy.ops.mesh.remove_doubles(threshold=merge_distance, use_unselected=True)
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                    force_convex([obj])
+
+                    # Cleanup
+                    bpy.ops.object.transform_apply(
+                        location=False, rotation=True, scale=True)
+
+            for obj in objs:
+                obj.select_set(True)
+            bpy.context.view_layer.objects.active = active_obj
+        
+            display_msg_box(
+                "Merged " + str(amount_merged) + " hull(s) with adjacent hulls (if any).", "Info", "INFO")
+        bpy.context.preferences.edit.use_global_undo = original_undo
+
+        return {'FINISHED'}
+
+
+# Merge Thin Hulls operator
+
+class Cleanup_FindThinHulls(bpy.types.Operator):
+    """Finds thin hulls, based on the Thin Threshold setting. The hulls are highlighted in Edit Mode, without any modification"""
+    bl_idname = "object.src_eng_cleanup_find_thin_hulls"
+    bl_label = "Find Thin Hulls"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        objs = check_for_selected()
+        if objs == False or get_current_mode() != "OBJECT":
+            display_msg_box(
+                "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
+
+            return {'FINISHED'}
+
+        original_undo = bpy.context.preferences.edit.use_global_undo
+        bpy.context.preferences.edit.use_global_undo = False
+
+        if len(objs) >= 1:
+            amount_selected = 0
+            thin_threshold = bpy.context.scene.SrcEngCollProperties.Thin_Threshold
+
+            active_obj = bpy.context.active_object
+            if active_obj.type != "MESH":
+                active_obj = objs[0]
+
+            for obj in objs:
+                obj.select_set(False)
+
+            for obj in objs:
+                bpy.ops.object.select_all(action='DESELECT')
+
+                bpy.context.view_layer.objects.active = obj
+                obj.select_set(True)
+
+                amount_selected += select_thin_hulls(obj, thin_threshold)
+                
+            for obj in objs:
+                obj.select_set(True)
+
+            if amount_selected > 0:
+                bpy.ops.object.mode_set(mode='EDIT')
+            bpy.context.view_layer.objects.active = active_obj
+        
+            display_msg_box(
+                "Selected " + str(amount_selected) + " hull(s).", "Info", "INFO")
+        bpy.context.preferences.edit.use_global_undo = original_undo
+
+        return {'FINISHED'}
+
 
 # Force Convex operator
 
@@ -2158,6 +2305,8 @@ class Cleanup_ForceConvex(bpy.types.Operator):
             return {'FINISHED'}
         
         active_obj = bpy.context.active_object
+        if active_obj.type != "MESH":
+            active_obj = objs[0]
 
         total_hull_count = force_convex(objs)
         for obj in objs:
@@ -2216,6 +2365,8 @@ class Cleanup_RemoveInsideHulls(bpy.types.Operator):
 
         if len(objs) >= 1:
             active_obj = bpy.context.active_object
+            if active_obj.type != "MESH":
+                active_obj = objs[0]
             
             for obj in objs:
                 obj.select_set(False)
@@ -2407,6 +2558,9 @@ class CopyQCOverrides(bpy.types.Operator):
             return {'FINISHED'}
         
         active_obj = bpy.context.active_object
+        if active_obj.type != "MESH":
+            active_obj = objs[0]
+
         qc_overrides_keys, qc_overrides_values = list(), list()
 
         if len(objs) >= 2:
@@ -2868,6 +3022,8 @@ ops = (
     ClearQCOverrides,
     Cleanup_MergeAdjacentSimilars,
     Cleanup_RemoveThinHulls,
+    Cleanup_MergeThinHulls,
+    Cleanup_FindThinHulls,
     Cleanup_ForceConvex,
     Cleanup_RemoveInsideHulls,
     Cleanup_CountHulls,
@@ -2976,12 +3132,14 @@ class MESH_PT_SrcEngCollGen_SubPanel_Cleanup(bpy.types.Panel):
         rowCleanup3_Label = boxCleanup.row()
         rowCleanup3 = boxCleanup.row()
         rowCleanup4 = boxCleanup.row()
-        rowCleanup5_Label = boxCleanup.row()
         rowCleanup5 = boxCleanup.row()
         rowCleanup6 = boxCleanup.row()
+        rowCleanup7_Label = boxCleanup.row()
         rowCleanup7 = boxCleanup.row()
         rowCleanup8 = boxCleanup.row()
         rowCleanup9 = boxCleanup.row()
+        rowCleanup10 = boxCleanup.row()
+        rowCleanup11 = boxCleanup.row()
 
         rowCleanup1_Label.label(text="Similarity")
         rowCleanup1.prop(
@@ -2992,12 +3150,14 @@ class MESH_PT_SrcEngCollGen_SubPanel_Cleanup(bpy.types.Panel):
         rowCleanup3.prop(
             bpy.context.scene.SrcEngCollProperties, "Thin_Threshold")
         rowCleanup4.operator("object.src_eng_cleanup_remove_thin_hulls")
-        rowCleanup5_Label.label(text="Other")
-        rowCleanup5.operator("object.src_eng_cleanup_force_convex")
-        rowCleanup6.operator("object.src_eng_cleanup_remove_inside")
-        rowCleanup7.operator("object.src_eng_split")
-        rowCleanup8.operator("object.src_eng_cleanup_collection")
-        rowCleanup9.operator("object.src_eng_cleanup_count_hulls")
+        rowCleanup5.operator("object.src_eng_cleanup_merge_thin_hulls")
+        rowCleanup6.operator("object.src_eng_cleanup_find_thin_hulls")
+        rowCleanup7_Label.label(text="Other")
+        rowCleanup7.operator("object.src_eng_cleanup_force_convex")
+        rowCleanup8.operator("object.src_eng_cleanup_remove_inside")
+        rowCleanup9.operator("object.src_eng_split")
+        rowCleanup10.operator("object.src_eng_cleanup_collection")
+        rowCleanup11.operator("object.src_eng_cleanup_count_hulls")
 
 class MESH_PT_SrcEngCollGen_SubPanel_Compile(bpy.types.Panel):
     bl_parent_id = "MESH_PT_src_eng_coll_gen"
@@ -3071,6 +3231,8 @@ classes = (
     ClearQCOverrides,
     Cleanup_MergeAdjacentSimilars,
     Cleanup_RemoveThinHulls,
+    Cleanup_MergeThinHulls,
+    Cleanup_FindThinHulls,
     Cleanup_ForceConvex,
     Cleanup_RemoveInsideHulls,
     Cleanup_CountHulls,
