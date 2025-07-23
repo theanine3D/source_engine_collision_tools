@@ -2234,7 +2234,7 @@ class Cleanup_MergeThinHulls(bpy.types.Operator):
         return {'FINISHED'}
 
 
-# Merge Thin Hulls operator
+# Find Thin Hulls operator
 
 class Cleanup_FindThinHulls(bpy.types.Operator):
     """Finds thin hulls, based on the Thin Threshold setting. The hulls are highlighted in Edit Mode, without any modification"""
