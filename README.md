@@ -19,7 +19,7 @@ Note that all of the "Generate" features support the Decimate Ratio setting, to 
 
 - **Split Up Collision Mesh** - Splits up selected collision models into multiple separate objects, with every part having no more than 32 hulls.
 - **Merge Adjacent Similars** - Merges convex hulls with similar adjacent hulls aggressively, lowering the final amount of hulls & producing a (potentially) less accurate, but more performant model. Similarity is based on the face count and volume of the hulls.
-- **Remove/Merge/Select Thin Hulls** - Allows you to quickly isolate, merge, or remove any convex hulls that are significantly smaller than all other hulls.
+- **Remove/Merge/Select Thin Hulls** - Thinness tools that can quickly isolate, merge, or remove any convex hulls that are significantly smaller than all other hulls.
 - **Force Convex** - Forces all existing hulls in every selected collision model to be convex. Especially useful after using Blender's built-in Decimate modifier on an existing collision mesh, to ensure that any decimated hulls are still convex.
 - **Remove Inside Hulls** - Removes any hulls that are completely or almost completely buried inside other hulls.
 - **Convex Cut** - A combination of the Bisect and Convex Hull operators in Blender. This lets you cut up the model and at the same time convert the cut pieces into convex hulls. Can be found via the Mesh menu in Edit Mode. 
