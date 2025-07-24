@@ -11,7 +11,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (2, 2, 0),
+    "version": (2, 2, 1),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -2197,7 +2197,7 @@ class Cleanup_MergeThinHulls(bpy.types.Operator):
 
         if len(objs) >= 1:
             amount_merged = 0
-            merge_distance = bpy.context.scene.SrcEngCollProperties.Merge_Distance
+            thin_threshold = bpy.context.scene.SrcEngCollProperties.Thin_Threshold
 
             active_obj = bpy.context.active_object
             if active_obj.type != "MESH":
@@ -2212,10 +2212,10 @@ class Cleanup_MergeThinHulls(bpy.types.Operator):
                 bpy.context.view_layer.objects.active = obj
                 obj.select_set(True)
 
-                amount_merged += select_thin_hulls(obj, 0.0001)
+                amount_merged += select_thin_hulls(obj, thin_threshold)
                 if amount_merged > 0:
                     bpy.ops.object.mode_set(mode='EDIT')
-                    bpy.ops.mesh.remove_doubles(threshold=merge_distance, use_unselected=True)
+                    bpy.ops.mesh.remove_doubles(threshold=0.0001, use_unselected=True)
                     bpy.ops.object.mode_set(mode='OBJECT')
                     force_convex([obj])
 
