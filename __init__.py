@@ -1714,7 +1714,8 @@ class GenerateFromBisection(bpy.types.Operator):
 
 
 class SplitUpSrcCollision(bpy.types.Operator):
-    """Splits up a selected collision model into multiple separate objects, with every part having no more than 32 hulls"""
+    """Splits up a selected collision model into multiple separate objects, with every part adhering to a hull limit based on the Split Increment setting"""
+"""
     bl_idname = "object.src_eng_split"
     bl_label = "Split Up Collision Mesh"
     bl_options = {'REGISTER'}
