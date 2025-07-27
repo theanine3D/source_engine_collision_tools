@@ -17,7 +17,7 @@ Note that all of the "Generate" features support the Decimate Ratio setting, to 
   - Attempts to generate only the amount of hulls specified by the "Fracture Target" setting. ie. A "Fracture Target" of 4 will try to split up the model into only 4 parts.
   - Note that the Cell Fracture addon needs to be enabled in your Blender preferences first!
 
-- **Split Up Collision Mesh** - Splits up selected collision models into multiple separate objects, with every part having no more than 32 hulls.
+- **Split Up Collision Mesh** - Splits up selected collision models into multiple separate objects, with every part having no more than 32 hulls. (The '32' amount can be customized, if needed)
 - **Merge Adjacent Similars** - Merges convex hulls with similar adjacent hulls aggressively, lowering the final amount of hulls & producing a (potentially) less accurate, but more performant model. Similarity is based on the face count and volume of the hulls.
 - **Remove/Merge/Select Thin Hulls** - Thinness tools that can quickly isolate, merge, or remove any convex hulls that are significantly smaller than all other hulls.
 - **Force Convex** - Forces all existing hulls in every selected collision model to be convex. Especially useful after using Blender's built-in Decimate modifier on an existing collision mesh, to ensure that any decimated hulls are still convex.
