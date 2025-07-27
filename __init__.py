@@ -11,7 +11,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (2, 2, 1),
+    "version": (2, 3, 0),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -156,6 +156,14 @@ class SrcEngCollProperties(bpy.types.PropertyGroup):
         description="The method used when bisecting the model to generate the hulls",
         default="xy"
     )
+    Split_Increment: bpy.props.IntProperty(
+        name="Split Increment",
+        subtype="UNSIGNED",
+        description="Some versions of Source Engine have a higher or lower limit than the default of 32 hulls per collision mesh. If you're not sure, just use the default setting",
+        soft_max=40,
+        min=2,
+        default=32)
+    
 # FUNCTION DEFINITIONS
 
 
@@ -1722,6 +1730,7 @@ class SplitUpSrcCollision(bpy.types.Operator):
 
         original_undo = bpy.context.preferences.edit.use_global_undo
         bpy.context.preferences.edit.use_global_undo = False
+        split_increment = bpy.context.scene.SrcEngCollProperties.Split_Increment
 
         if len(objs) >= 1:
             total_part_count = 0
@@ -1782,7 +1791,7 @@ class SplitUpSrcCollision(bpy.types.Operator):
 
                 start = 0
                 end = len(hulls)
-                step = 32
+                step = split_increment
 
                 for i in range(start, end, step):
                     x = i
@@ -3006,6 +3015,40 @@ class CleanupCollection(bpy.types.Operator):
 
         return {'FINISHED'}
 
+class UnrealRename(bpy.types.Operator):
+    bl_idname = "object.rename_collision_for_unreal"
+    bl_label = "Rename Collision for Unreal"
+    bl_description = "Renames _phys objects to UCX_ prefix for Unreal Engine compatibility"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        phys_objects = [obj for obj in bpy.data.objects 
+                       if obj.type == 'MESH' and "_phys" in obj.name]
+        
+        if not phys_objects:
+            self.report({'INFO'}, "No collision meshes found")
+            return {'CANCELLED'}
+        
+        renamed_count = 0
+        
+        for obj in phys_objects:
+
+            new_name = obj.name.replace("_phys", "")
+            
+            if not new_name.startswith("UCX_"):
+                new_name = "UCX_" + new_name
+            
+            if obj.name in bpy.data.collections.keys():
+                bpy.data.collections[obj.name].name = new_name
+
+            obj.name = new_name
+
+            renamed_count += 1
+        
+       
+        self.report({'INFO'}, f"Renamed {renamed_count} collision mesh(es) for Unreal Engine")
+        return {'FINISHED'}
+
 
 # End classes
 
@@ -3029,7 +3072,8 @@ ops = (
     RecommendedCollSettings,
     CleanupCollection,
     UpdateVMF,
-    ExportVMF
+    ExportVMF,
+    UnrealRename
 )
 
 
@@ -3138,7 +3182,9 @@ class MESH_PT_SrcEngCollGen_SubPanel_Cleanup(bpy.types.Panel):
         rowCleanup8 = boxCleanup.row()
         rowCleanup9 = boxCleanup.row()
         rowCleanup10 = boxCleanup.row()
+        rowCleanup11_Label = boxCleanup.row()
         rowCleanup11 = boxCleanup.row()
+        rowCleanup12 = boxCleanup.row()
 
         rowCleanup1_Label.label(text="Similarity")
         rowCleanup1.prop(
@@ -3151,12 +3197,17 @@ class MESH_PT_SrcEngCollGen_SubPanel_Cleanup(bpy.types.Panel):
         rowCleanup4.operator("object.src_eng_cleanup_remove_thin_hulls")
         rowCleanup5.operator("object.src_eng_cleanup_merge_thin_hulls")
         rowCleanup6.operator("object.src_eng_cleanup_find_thin_hulls")
+
         rowCleanup7_Label.label(text="Other")
         rowCleanup7.operator("object.src_eng_cleanup_force_convex")
         rowCleanup8.operator("object.src_eng_cleanup_remove_inside")
-        rowCleanup9.operator("object.src_eng_split")
+        rowCleanup9.operator("object.src_eng_cleanup_count_hulls")
         rowCleanup10.operator("object.src_eng_cleanup_collection")
-        rowCleanup11.operator("object.src_eng_cleanup_count_hulls")
+        
+        rowCleanup11_Label.label(text="Splitting")
+        rowCleanup11.prop(
+            bpy.context.scene.SrcEngCollProperties, "Split_Increment")
+        rowCleanup12.operator("object.src_eng_split")
 
 class MESH_PT_SrcEngCollGen_SubPanel_Compile(bpy.types.Panel):
     bl_parent_id = "MESH_PT_src_eng_coll_gen"
@@ -3238,7 +3289,8 @@ classes = (
     CleanupCollection,
     RecommendedCollSettings,
     UpdateVMF,
-    ExportVMF
+    ExportVMF,
+    UnrealRename
 )
 
 
