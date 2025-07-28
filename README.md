@@ -42,6 +42,7 @@ Note that all of the "Generate" features support the Decimate Ratio setting, to 
 - Source Engine has a limit of 32 hulls per collision mesh. Going beyond 32 hulls can lead to severe lag during gameplay. The "Split Up Collision Mesh" and "Update VMF" features are handy for this. By splitting up your collision mesh into 32-hull parts, you prevent lag, and the Update VMF feature can add numerous (even dozens or hundreds) of parts automatically for you to a VMF file.
 - To utilize the QC override system, add a string-based Custom Property (in the bottom of the Object Properties panel) to one split-up collision object in your Blender scene, with the property name starting with "$". Enter the value/parameters for this property. Then press the Copy QC Overrides button to copy this override to all other selected collision parts. These will be included in the resulting generated QC files.
   - ![image](https://github.com/theanine3D/source-engine-collision-tools/assets/88953117/ca659755-e483-4866-871c-a9fc3848898d)
+- If you're using this addon for Unreal Engine, there is a hidden feature in the addon, "Rename for Unreal Engine", that you can find with Blender's search button (F3 or spacebar). This will let you instantly rename all of the collision meshes in your scene so that they conform to Unreal Engine's collision naming scheme (with the UCX_ prefix).
 
 ## Previews ##
 ### Interface ###
