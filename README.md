@@ -31,7 +31,7 @@ Note that all of the "Generate" features support the Decimate Ratio setting, to 
 - If you are using Blender 4.2 or higher, you can install the addon via Blender's official [online extension repository](https://extensions.blender.org/add-ons/sourceenginecollisiontools/), which can also be accessed via Blender's Preferences.
 - If you are using Blender 4.1 or lower, you can get the newest, bleeding edge version of the addon by pressing the big green "Code" button above, and choose "Download ZIP"
 - After downloading either of the above, go into Blender's addon preferences (File → Preferences → Addons)
-4. Click the "Install..." button and browse to the ZIP file you just downloaded, select it, and press "Install Add-on"
+  - Click the "Install..." button and browse to the ZIP file you just downloaded, select it, and press "Install Add-on"
 
 ## Tips
 - The UI for the addon is found in the "Object Properties" tab on the right-hand side of the Blender window.
