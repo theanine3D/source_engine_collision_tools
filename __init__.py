@@ -11,7 +11,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (2, 3, 0),
+    "version": (2, 3, 1),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -128,6 +128,7 @@ class SrcEngCollProperties(bpy.types.PropertyGroup):
                 ("tools/toolstrigger", "TRIGGER", "Not solid / Trigger"),
                 ("tools/toolsblack", "BLACK", "Solid / Rendered / Not affected by light"),
                 ("tools/toolswhite", "WHITE", "Solid / Rendered / Not affected by light"),
+                ("tools/toolsblocklight", "BLOCKLIGHT", "Not solid / Not rendered / Blocks light"),
                 ],
         name="Brush Texture",
         description="The texture to apply to brushes exported as VMF",
@@ -731,6 +732,7 @@ class GenerateFromFaces(bpy.types.Operator):
                 root_collection = None
                 if 'Collision Models' in bpy.data.collections.keys():
                     root_collection = bpy.data.collections['Collision Models']
+                    bpy.context.view_layer.layer_collection.children.get("Collision Models").exclude = False
                 else:
                     root_collection = bpy.data.collections.new("Collision Models")
                     bpy.context.scene.collection.children.link(root_collection)
@@ -861,6 +863,11 @@ class GenerateFromFaces(bpy.types.Operator):
                 obj_phys.name = obj.name.lower() + "_phys"
                 bpy.ops.object.shade_smooth()
 
+                # Replace spaces with underscores - otherwise compiling the QC can fail due to misread syntax
+                obj_phys.name = obj_phys.name.strip().replace(" ","_")
+                obj.name = obj.name.lower().strip().replace(" ","_")
+                collection_phys.name = collection_phys.name.strip().replace(" ","_")
+
                 # Remove non-manifold and degenerates
                 bpy.ops.object.mode_set(mode='EDIT')
                 bpy.ops.mesh.select_mode(
@@ -954,6 +961,7 @@ class GenerateFromUVMap(bpy.types.Operator):
                 root_collection = None
                 if 'Collision Models' in bpy.data.collections.keys():
                     root_collection = bpy.data.collections['Collision Models']
+                    bpy.context.view_layer.layer_collection.children.get("Collision Models").exclude = False
                 else:
                     root_collection = bpy.data.collections.new("Collision Models")
                     bpy.context.scene.collection.children.link(root_collection)
@@ -1043,6 +1051,11 @@ class GenerateFromUVMap(bpy.types.Operator):
                         c.objects.unlink(obj_phys)
                 if obj_phys.name in bpy.context.scene.collection.objects.keys():
                     bpy.context.scene.collection.objects.unlink(obj_phys)
+
+                # Replace spaces with underscores - otherwise compiling the QC can fail due to misread syntax
+                obj_phys.name = obj_phys.name.strip().replace(" ","_")
+                obj.name = obj.name.lower().strip().replace(" ","_")
+                collection_phys.name = collection_phys.name.strip().replace(" ","_")
 
                 bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -1141,6 +1154,7 @@ class GenerateFromFracture(bpy.types.Operator):
                 root_collection = None
                 if 'Collision Models' in bpy.data.collections.keys():
                     root_collection = bpy.data.collections['Collision Models']
+                    bpy.context.view_layer.layer_collection.children.get("Collision Models").exclude = False
                 else:
                     root_collection = bpy.data.collections.new("Collision Models")
                     bpy.context.scene.collection.children.link(root_collection)
@@ -1204,11 +1218,12 @@ class GenerateFromFracture(bpy.types.Operator):
                     quad_method='BEAUTY', ngon_method='BEAUTY')
                 bpy.ops.object.mode_set(mode="OBJECT")
             
-                force_convex([obj_phys])
+                total_hull_count += force_convex([obj_phys])
 
                 # Begin finalizing
                 bpy.ops.object.mode_set(mode='OBJECT')
                 obj_phys.name = obj.name.lower() + "_phys"
+                
                 bpy.ops.object.shade_smooth()
                 obj.hide_set(True)
                 bpy.ops.object.transform_apply(
@@ -1223,6 +1238,11 @@ class GenerateFromFracture(bpy.types.Operator):
 
                 if obj_phys.name not in collection_phys.objects.keys():
                     collection_phys.objects.link(obj_phys)
+
+                # Replace spaces with underscores - otherwise compiling the QC can fail due to misread syntax
+                obj_phys.name = obj_phys.name.strip().replace(" ","_")
+                obj.name = obj.name.lower().strip().replace(" ","_")
+                collection_phys.name = collection_phys.name.strip().replace(" ","_")
 
                 # Unlink the new collision model from other collections
                 original_collection.objects.unlink(obj_phys)
@@ -1613,6 +1633,7 @@ class GenerateFromBisection(bpy.types.Operator):
                 root_collection = None
                 if 'Collision Models' in bpy.data.collections.keys():
                     root_collection = bpy.data.collections['Collision Models']
+                    bpy.context.view_layer.layer_collection.children.get("Collision Models").exclude = False
                 else:
                     root_collection = bpy.data.collections.new("Collision Models")
                     bpy.context.scene.collection.children.link(root_collection)
@@ -1672,6 +1693,11 @@ class GenerateFromBisection(bpy.types.Operator):
                         c.objects.unlink(obj_phys)
                 if obj_phys.name in bpy.context.scene.collection.objects.keys():
                     bpy.context.scene.collection.objects.unlink(obj_phys)
+
+                # Replace spaces with underscores - otherwise compiling the QC can fail due to misread syntax
+                obj_phys.name = obj_phys.name.strip().replace(" ","_")
+                obj.name = obj.name.lower().strip().replace(" ","_")
+                collection_phys.name = collection_phys.name.strip().replace(" ","_")
                 
                 # Restore original origin point
                 new_origin = tuple(obj.location)
@@ -1715,7 +1741,6 @@ class GenerateFromBisection(bpy.types.Operator):
 
 class SplitUpSrcCollision(bpy.types.Operator):
     """Splits up a selected collision model into multiple separate objects, with every part adhering to a hull limit based on the Split Increment setting"""
-"""
     bl_idname = "object.src_eng_split"
     bl_label = "Split Up Collision Mesh"
     bl_options = {'REGISTER'}
@@ -1751,6 +1776,7 @@ class SplitUpSrcCollision(bpy.types.Operator):
                 root_collection = None
                 if 'Collision Models' in bpy.data.collections.keys():
                     root_collection = bpy.data.collections['Collision Models']
+                    bpy.context.view_layer.layer_collection.children.get("Collision Models").exclude = False
                 else:
                     root_collection = bpy.data.collections.new("Collision Models")
                     bpy.context.scene.collection.children.link(root_collection)
@@ -2514,6 +2540,7 @@ class GenerateSourceQC(bpy.types.Operator):
         if 'Collision Models' in bpy.data.collections.keys():
             if len(bpy.data.collections["Collision Models"].all_objects) > 0:
                 root_collection = bpy.data.collections['Collision Models']
+                bpy.context.view_layer.layer_collection.children.get("Collision Models").exclude = False
             else:
                 display_msg_box(
                     "There are no collision models in the 'Collision Models' collection. Place your collision models there first", "Error", "ERROR")
@@ -2530,6 +2557,14 @@ class GenerateSourceQC(bpy.types.Operator):
             display_msg_box(
             "There are no visible collision models in the Collision Models collection. Check to make sure that they're not all hidden.", "Error", "ERROR")
             return {'FINISHED'}
+        
+        # Replace spaces with underscores for all collision meshes - otherwise compiling the QC can fail due to misread syntax
+        for obj in objs:
+            if " " in obj.name:
+                obj.name = obj.name.strip().replace(" ","_")
+        for coll in root_collection.children.keys():
+            if " " in coll:
+                bpy.data.collections[coll].name = coll.strip().replace(" ","_")
 
         # Generate QC file for every object
         for obj in objs:
@@ -2675,6 +2710,7 @@ class UpdateVMF(bpy.types.Operator):
         if 'Collision Models' in bpy.data.collections.keys():
             if len(bpy.data.collections["Collision Models"].all_objects) > 0:
                 root_collection = bpy.data.collections['Collision Models']
+                bpy.context.view_layer.layer_collection.children.get("Collision Models").exclude = False
             else:
                 display_msg_box(
                     "There are no collision models in the 'Collision Models' collection. Place your collision models there first", "Error", "ERROR")
@@ -2946,16 +2982,16 @@ class ExportVMF(bpy.types.Operator):
                         sides_to_add.append(new_side)
 
                     print(f"[VMF Export] Total side count: {len(sides_to_add)}")
-                    print(f"[VMF Export] VMF Texture to set: {vmf_texture}")
 
                     new_solid = Solid()
 
-                    print(f"[VMF Export] Texture now set: {new_solid.has_texture('tools/toolsnodraw')}")
+                    new_solid.has_texture('tools/toolsnodraw')
 
                     for side in sides_to_add:
                         new_solid.add_sides(side)
 
                     new_solid.set_texture(vmf_texture)
+                    print(f"[VMF Export] Texture now set: {vmf_texture}")
                     solids_to_add.append(new_solid)
 
                     print(f"[VMF Export] Added {len(sides_to_add)} sides to solid")
@@ -2968,7 +3004,7 @@ class ExportVMF(bpy.types.Operator):
 
                 import time
                 export_path = os.path.join(bpy.path.abspath(vmf_export_dir), time.strftime("%Y%m%d-%H%M%S")) + "" + f" {str(obj_index)}.vmf"
-                print("Export path: " + export_path)
+                print("Export path: " + export_path + "\n")
 
                 obj_index += 1
                 
@@ -3045,9 +3081,8 @@ class UnrealRename(bpy.types.Operator):
             obj.name = new_name
 
             renamed_count += 1
-        
-       
-        self.report({'INFO'}, f"Renamed {renamed_count} collision mesh(es) for Unreal Engine")
+               
+        self.report({'INFO'}, f"Renamed {renamed_count} collision mesh(es) for Unreal Engine.")
         return {'FINISHED'}
 
 
