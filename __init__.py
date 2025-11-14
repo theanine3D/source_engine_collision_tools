@@ -11,7 +11,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (2, 3, 1),
+    "version": (2, 4, 0),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -92,7 +92,7 @@ class SrcEngCollProperties(bpy.types.PropertyGroup):
         maxlen=1024)
     QC_Src_Models_Dir: bpy.props.StringProperty(
         name="Models Path",
-        description="Path of the folder where your compiled models are stored in the Source Engine game directory. This is the $modelname path from your QC files, but without the model name). Must end with a trailing slash '/'",
+        description="Path of the folder where your compiled models are stored in the Source Engine game directory. This is the $modelname path from your QC files, but without the model filename/extension at the end. Must end with a trailing slash '/'",
         default="mymodels/",
         maxlen=1024)
     QC_Src_Mats_Dir: bpy.props.StringProperty(
@@ -112,8 +112,8 @@ class SrcEngCollProperties(bpy.types.PropertyGroup):
         default="",
         maxlen=1024)
     VMF_Remove: bpy.props.BoolProperty(
-        name="Remove",
-        description="If enabled, partitioned (ie. _part_) collision models will be REMOVED from the VMF along with their corresponding entity (ie. prop_static). Can't be undone. Keep a backup VMF just in case",
+        name="Remove Mode",
+        description="If enabled, the 'Update VMF' button will REMOVE partitioned ('_phys_part_') collision models from the VMF along with their corresponding entity (ie. prop_static). Can't be undone. Keep a backup VMF just in case",
         default=False)
     VMF_Export_Dir: bpy.props.StringProperty(
         name="Export to",
@@ -164,6 +164,25 @@ class SrcEngCollProperties(bpy.types.PropertyGroup):
         soft_max=40,
         min=2,
         default=32)
+    Thin_Mode: bpy.props.EnumProperty(
+        items= [
+                ("find", "Find", "Finds thin hulls, based on the Thin Threshold setting. The hulls are highlighted in Edit Mode, without any modification"),
+                ("merge", "Merge", "Merges thin hulls with adjacent hulls (if any), based on the Thin Threshold setting"),
+                ("remove", "Remove", "Removes thin hulls, based on the Thin Threshold setting")
+                ],
+        name="Mode",
+        description="The method of action to use when processing thin hulls in the selected object(s)",
+        default="find"
+    )
+    Inside_Mode: bpy.props.EnumProperty(
+        items= [
+                ("find", "Find", "Finds hulls that are mostly or entirely inside another hull. The hulls are highlighted in Edit Mode, without any modification"),
+                ("remove", "Remove", "Removes hulls that are mostly or entirely inside another hull."),
+                ],
+        name="Mode",
+        description="The method of action to use when processing inside hulls in the selected object(s)",
+        default="find"
+    )
     
 # FUNCTION DEFINITIONS
 
@@ -652,13 +671,11 @@ def select_thin_hulls(obj, threshold=0.01):
     """Selects thin hulls based on volume threshold."""
     hull_volumes = get_hull_volumes(obj)
     if not hull_volumes:
-        print("No valid hulls found")
         return False
 
     # Calculate average volume
     total_volume = sum(vol for _, vol in hull_volumes)
     avg_volume = total_volume / len(hull_volumes)
-    print(f"Average hull volume: {avg_volume}")
 
     # Find thin hulls (volume <= threshold * average)
     thin_face_indices = set()
@@ -669,10 +686,7 @@ def select_thin_hulls(obj, threshold=0.01):
             thin_hull_count += 1
 
     if not thin_face_indices:
-        print("No thin hulls found")
         return 0
-
-    print(f"Found {len(thin_face_indices)} faces in thin hulls (<= {threshold*100}% of average volume)")
 
     # Switch to edit mode and select thin hulls
     bpy.ops.object.mode_set(mode='EDIT')
@@ -1738,7 +1752,6 @@ class GenerateFromBisection(bpy.types.Operator):
 
 # Split Up Collision Mesh operator
 
-
 class SplitUpSrcCollision(bpy.types.Operator):
     """Splits up a selected collision model into multiple separate objects, with every part adhering to a hull limit based on the Split Increment setting"""
     bl_idname = "object.src_eng_split"
@@ -2156,12 +2169,12 @@ class Cleanup_MergeAdjacentSimilars(bpy.types.Operator):
 
         return {'FINISHED'}
 
-# Remove Thin Hulls operator
+# Process Thin Hulls operator
 
-class Cleanup_RemoveThinHulls(bpy.types.Operator):
-    """Removes thin hulls, based on the Thin Threshold setting"""
-    bl_idname = "object.src_eng_cleanup_remove_thin_hulls"
-    bl_label = "Remove Thin Hulls"
+class Cleanup_ProcessThinHulls(bpy.types.Operator):
+    """Finds thin hulls, based on the Thin Threshold setting, and optionally takes action on them, based on the mode set"""
+    bl_idname = "object.src_eng_cleanup_process_thin_hulls"
+    bl_label = "Process Thin Hulls"
     bl_options = {'REGISTER'}
 
     def execute(self, context):
@@ -2174,120 +2187,7 @@ class Cleanup_RemoveThinHulls(bpy.types.Operator):
 
         original_undo = bpy.context.preferences.edit.use_global_undo
         bpy.context.preferences.edit.use_global_undo = False
-
-        if len(objs) >= 1:
-            amount_removed = 0
-            thin_threshold = bpy.context.scene.SrcEngCollProperties.Thin_Threshold
-            active_obj = bpy.context.active_object
-            if active_obj.type != "MESH":
-                active_obj = objs[0]
-
-            for obj in objs:
-                obj.select_set(False)
-
-            for obj in objs:
-                bpy.ops.object.select_all(action='DESELECT')
-
-                bpy.context.view_layer.objects.active = obj
-                obj.select_set(True)
-
-                amount_removed += select_thin_hulls(obj, thin_threshold)
-                if amount_removed > 0:
-                    bpy.ops.object.mode_set(mode='EDIT')
-                    bpy.ops.mesh.delete(type='FACE')
-                    bpy.ops.object.mode_set(mode='OBJECT')
-
-                    # Cleanup
-                    bpy.ops.object.transform_apply(
-                        location=False, rotation=True, scale=True)
-
-            for obj in objs:
-                obj.select_set(True)
-            bpy.context.view_layer.objects.active = active_obj
-        
-            display_msg_box(
-                "Removed " + str(amount_removed) + " thin hull(s).", "Info", "INFO")
-        bpy.context.preferences.edit.use_global_undo = original_undo
-
-        return {'FINISHED'}
-
-
-# Merge Thin Hulls operator
-
-class Cleanup_MergeThinHulls(bpy.types.Operator):
-    """Merges thin hulls with adjacent hulls (if any), based on the Thin Threshold setting"""
-    bl_idname = "object.src_eng_cleanup_merge_thin_hulls"
-    bl_label = "Merge Thin Hulls"
-    bl_options = {'REGISTER'}
-
-    def execute(self, context):
-        objs = check_for_selected()
-        if objs == False or get_current_mode() != "OBJECT":
-            display_msg_box(
-                "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
-
-            return {'FINISHED'}
-
-        original_undo = bpy.context.preferences.edit.use_global_undo
-        bpy.context.preferences.edit.use_global_undo = False
-
-        if len(objs) >= 1:
-            amount_merged = 0
-            thin_threshold = bpy.context.scene.SrcEngCollProperties.Thin_Threshold
-
-            active_obj = bpy.context.active_object
-            if active_obj.type != "MESH":
-                active_obj = objs[0]
-
-            for obj in objs:
-                obj.select_set(False)
-
-            for obj in objs:
-                bpy.ops.object.select_all(action='DESELECT')
-
-                bpy.context.view_layer.objects.active = obj
-                obj.select_set(True)
-
-                amount_merged += select_thin_hulls(obj, thin_threshold)
-                if amount_merged > 0:
-                    bpy.ops.object.mode_set(mode='EDIT')
-                    bpy.ops.mesh.remove_doubles(threshold=0.0001, use_unselected=True)
-                    bpy.ops.object.mode_set(mode='OBJECT')
-                    force_convex([obj])
-
-                    # Cleanup
-                    bpy.ops.object.transform_apply(
-                        location=False, rotation=True, scale=True)
-
-            for obj in objs:
-                obj.select_set(True)
-            bpy.context.view_layer.objects.active = active_obj
-        
-            display_msg_box(
-                "Merged " + str(amount_merged) + " thin hull(s) with adjacent hulls (if any).", "Info", "INFO")
-        bpy.context.preferences.edit.use_global_undo = original_undo
-
-        return {'FINISHED'}
-
-
-# Find Thin Hulls operator
-
-class Cleanup_FindThinHulls(bpy.types.Operator):
-    """Finds thin hulls, based on the Thin Threshold setting. The hulls are highlighted in Edit Mode, without any modification"""
-    bl_idname = "object.src_eng_cleanup_find_thin_hulls"
-    bl_label = "Find Thin Hulls"
-    bl_options = {'REGISTER'}
-
-    def execute(self, context):
-        objs = check_for_selected()
-        if objs == False or get_current_mode() != "OBJECT":
-            display_msg_box(
-                "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
-
-            return {'FINISHED'}
-
-        original_undo = bpy.context.preferences.edit.use_global_undo
-        bpy.context.preferences.edit.use_global_undo = False
+        thin_mode = bpy.context.scene.SrcEngCollProperties.Thin_Mode
 
         if len(objs) >= 1:
             amount_selected = 0
@@ -2311,12 +2211,36 @@ class Cleanup_FindThinHulls(bpy.types.Operator):
             for obj in objs:
                 obj.select_set(True)
 
+            bpy.context.view_layer.objects.active = active_obj
+
             if amount_selected > 0:
                 bpy.ops.object.mode_set(mode='EDIT')
-            bpy.context.view_layer.objects.active = active_obj
-        
-            display_msg_box(
-                "Selected " + str(amount_selected) + " thin hull(s).", "Info", "INFO")
+                
+                if thin_mode == "find":
+                    area = [a for a in bpy.context.screen.areas if a.type == 'VIEW_3D'][0]
+                    area.spaces[0].shading.type = 'WIREFRAME'
+                    display_msg_box(
+                        "Selected " + str(amount_selected) + " thin hull(s).", "Info", "INFO")
+                elif thin_mode == "remove":
+                    bpy.ops.mesh.delete(type='VERT')
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                    display_msg_box(
+                        "Deleted " + str(amount_selected) + " thin hull(s).", "Info", "INFO")
+                    
+                elif thin_mode == "merge":
+                    original_count = count_loose_geometry(obj)
+                    bpy.ops.mesh.remove_doubles(threshold=0.0001, use_unselected=True)
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                    new_count = force_convex([obj])
+
+                    bpy.ops.object.transform_apply(
+                        location=False, rotation=True, scale=True)
+                    
+                    display_msg_box(
+                        "Merged " + str(original_count - new_count) + " thin hull(s) with adjacent hulls", "Info", "INFO")
+            else:
+                display_msg_box(
+                    "No thin hulls found. Try increasing the Thin Threshold setting.", "Info", "INFO")
         bpy.context.preferences.edit.use_global_undo = original_undo
 
         return {'FINISHED'}
@@ -2379,12 +2303,12 @@ class Cleanup_CountHulls(bpy.types.Operator):
 
         return {'FINISHED'}
 
-# Remove Inside Hulls operator
+# Process Inside Hulls operator
 
-class Cleanup_RemoveInsideHulls(bpy.types.Operator):
-    """Removes hulls that are (entirely or mostly) inside other hulls"""
-    bl_idname = "object.src_eng_cleanup_remove_inside"
-    bl_label = "Remove Inside Hulls"
+class Cleanup_ProcessInsideHulls(bpy.types.Operator):
+    """Finds hulls that are (entirely or mostly) inside other hulls, and optionally takes action on them based on the mode set"""
+    bl_idname = "object.src_eng_cleanup_process_inside"
+    bl_label = "Process Inside Hulls"
     bl_options = {'REGISTER'}
 
     def execute(self, context):
@@ -2397,6 +2321,7 @@ class Cleanup_RemoveInsideHulls(bpy.types.Operator):
 
         original_undo = bpy.context.preferences.edit.use_global_undo
         bpy.context.preferences.edit.use_global_undo = False
+        inside_mode = bpy.context.scene.SrcEngCollProperties.Inside_Mode
 
         if len(objs) >= 1:
             active_obj = bpy.context.active_object
@@ -2406,7 +2331,7 @@ class Cleanup_RemoveInsideHulls(bpy.types.Operator):
             for obj in objs:
                 obj.select_set(False)
 
-            amount_to_remove = 0
+            amount_to_select = 0
 
             for obj in objs:
 
@@ -2435,9 +2360,11 @@ class Cleanup_RemoveInsideHulls(bpy.types.Operator):
                     type='ORIGIN_GEOMETRY', center='MEDIAN')
 
                 hulls = [o for o in bpy.context.selected_objects]
-                hulls_to_delete = set()
+                hulls_to_select = set()
 
                 for outer_hull in hulls:
+                    for v in outer_hull.data.vertices:
+                        v.select = False
 
                     # Get bounding box lowest and highest vertices - to check if inner hull is inside it later
                     hull_bbox_min = outer_hull.matrix_world @ mathutils.Vector(
@@ -2469,18 +2396,19 @@ class Cleanup_RemoveInsideHulls(bpy.types.Operator):
                         # Zero length means no frontfaces were visible - aka inner hull truly is inside outer hull
                         if len(frontfaces) == 0:
 
-                            # Mark the hull for deletion if it's inside another hull
-                            hulls_to_delete.add(inner_hull)
+                            # Mark the hull for selection if it's inside another hull
+                            hulls_to_select.add(inner_hull)
                         else:
                             continue
 
                 bpy.ops.object.mode_set(mode='OBJECT')
 
-                amount_to_remove += len(hulls_to_delete)
+                amount_to_select += len(hulls_to_select)
 
-                # Remove marked hulls
-                for h in hulls_to_delete:
-                    bpy.data.objects.remove(h)
+                # Mark vertices as selected in the inside hulls
+                for h in hulls_to_select:
+                    for v in h.data.vertices:
+                        v.select = True
 
                 # Rejoin and clean up
                 bpy.context.view_layer.objects.active = bpy.context.selected_objects[0]
@@ -2490,7 +2418,6 @@ class Cleanup_RemoveInsideHulls(bpy.types.Operator):
                 bpy.context.active_object.name = original_name
                 bpy.ops.object.transform_apply(
                     location=False, rotation=True, scale=True)
-                bpy.ops.object.shade_smooth()
 
                 # Restore the original object's origin point
                 original_cursor_location = bpy.context.scene.cursor.location.copy()
@@ -2502,8 +2429,21 @@ class Cleanup_RemoveInsideHulls(bpy.types.Operator):
                 obj.select_set(True)
             bpy.context.view_layer.objects.active = active_obj
 
-            display_msg_box(
-                "Removed " + str(amount_to_remove) + " hull(s).", "Info", "INFO")
+            if amount_to_select > 0:
+                bpy.ops.object.mode_set(mode="EDIT")
+
+                if inside_mode == "find":
+                    bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT')
+                    display_msg_box(
+                        "Selected " + str(amount_to_select) + " hull(s).", "Info", "INFO")
+                else:
+                    bpy.ops.mesh.delete(type='VERT')
+                    bpy.ops.object.mode_set(mode="OBJECT")
+                    display_msg_box(
+                        "Removed " + str(amount_to_select) + " hull(s).", "Info", "INFO")
+            else:
+                display_msg_box(
+                    "No inside hulls found.", "Info", "INFO")
 
         bpy.context.preferences.edit.use_global_undo = original_undo
 
@@ -2859,8 +2799,7 @@ class UpdateVMF(bpy.types.Operator):
 
         return {'FINISHED'}
 
-
-# Update VMF operator
+# Export VMF operator
 
 class ExportVMF(bpy.types.Operator):
     """Converts all selected collision mesh objects into Hammer brushes and exports them as a single VMF file"""
@@ -3099,11 +3038,9 @@ ops = (
     CopyQCOverrides,
     ClearQCOverrides,
     Cleanup_MergeAdjacentSimilars,
-    Cleanup_RemoveThinHulls,
-    Cleanup_MergeThinHulls,
-    Cleanup_FindThinHulls,
+    Cleanup_ProcessThinHulls,
     Cleanup_ForceConvex,
-    Cleanup_RemoveInsideHulls,
+    Cleanup_ProcessInsideHulls,
     Cleanup_CountHulls,
     RecommendedCollSettings,
     CleanupCollection,
@@ -3212,9 +3149,10 @@ class MESH_PT_SrcEngCollGen_SubPanel_Cleanup(bpy.types.Panel):
         rowCleanup3 = boxCleanup.row()
         rowCleanup4 = boxCleanup.row()
         rowCleanup5 = boxCleanup.row()
+        rowCleanup6_Label = boxCleanup.row()
         rowCleanup6 = boxCleanup.row()
-        rowCleanup7_Label = boxCleanup.row()
         rowCleanup7 = boxCleanup.row()
+        rowCleanup8_Label = boxCleanup.row()
         rowCleanup8 = boxCleanup.row()
         rowCleanup9 = boxCleanup.row()
         rowCleanup10 = boxCleanup.row()
@@ -3229,14 +3167,18 @@ class MESH_PT_SrcEngCollGen_SubPanel_Cleanup(bpy.types.Panel):
 
         rowCleanup3_Label.label(text="Thinness")
         rowCleanup3.prop(
+            bpy.context.scene.SrcEngCollProperties, "Thin_Mode")
+        rowCleanup4.prop(
             bpy.context.scene.SrcEngCollProperties, "Thin_Threshold")
-        rowCleanup4.operator("object.src_eng_cleanup_remove_thin_hulls")
-        rowCleanup5.operator("object.src_eng_cleanup_merge_thin_hulls")
-        rowCleanup6.operator("object.src_eng_cleanup_find_thin_hulls")
+        rowCleanup5.operator("object.src_eng_cleanup_process_thin_hulls")
 
-        rowCleanup7_Label.label(text="Other")
-        rowCleanup7.operator("object.src_eng_cleanup_force_convex")
-        rowCleanup8.operator("object.src_eng_cleanup_remove_inside")
+        rowCleanup6_Label.label(text="Inside Hulls")
+        rowCleanup6.prop(
+            bpy.context.scene.SrcEngCollProperties, "Inside_Mode")
+        rowCleanup7.operator("object.src_eng_cleanup_process_inside")
+
+        rowCleanup8_Label.label(text="Other")
+        rowCleanup8.operator("object.src_eng_cleanup_force_convex")
         rowCleanup9.operator("object.src_eng_cleanup_count_hulls")
         rowCleanup10.operator("object.src_eng_cleanup_collection")
         
@@ -3260,7 +3202,6 @@ class MESH_PT_SrcEngCollGen_SubPanel_Compile(bpy.types.Panel):
 
         # Compile / QC UI
         boxQC = rowQC.box()
-        boxQC.label(text="Compile Tools")
         rowQC1 = boxQC.row()
         rowQC2 = boxQC.row()
         rowQC3 = boxQC.row()
@@ -3268,8 +3209,6 @@ class MESH_PT_SrcEngCollGen_SubPanel_Compile(bpy.types.Panel):
         rowQC5 = boxQC.row()
         rowQC6 = boxQC.row()
         rowQC7 = boxQC.row()
-        rowQC8 = boxQC.row()
-        rowQC9 = boxQC.row()
 
         rowQC1.prop(bpy.context.scene.SrcEngCollProperties, "QC_Folder")
         rowQC2.prop(bpy.context.scene.SrcEngCollProperties,
@@ -3281,22 +3220,26 @@ class MESH_PT_SrcEngCollGen_SubPanel_Compile(bpy.types.Panel):
         rowQC5.operator("object.src_eng_qc")
         rowQC6.operator("object.copy_qc_overrides")
         rowQC7.operator("object.clear_qc_overrides")
-        rowQC8.prop(bpy.context.scene.SrcEngCollProperties, "VMF_File")
-        rowQC9.prop(bpy.context.scene.SrcEngCollProperties, "VMF_Remove")
-        rowQC9.operator("object.src_eng_vmf_update")
-        rowQC9.enabled = len(
+
+        boxVMF = layout.box()
+        rowVMF1 = boxVMF.row()
+        rowVMF2 = boxVMF.row()
+        rowVMF1.prop(bpy.context.scene.SrcEngCollProperties, "VMF_File")
+        rowVMF2.prop(bpy.context.scene.SrcEngCollProperties, "VMF_Remove")
+        rowVMF2.operator("object.src_eng_vmf_update")
+        rowVMF2.enabled = len(
             bpy.context.scene.SrcEngCollProperties.VMF_File) > 0
         
         # Export as Brushes
-        boxVMF = layout.box()
-        boxVMF.label(text="Hammer Brushes")
-        rowVMF1 = boxVMF.row()
-        rowVMF2 = boxVMF.row()
-        rowVMF3 = boxVMF.row()
+        boxBrush = layout.box()
+        boxBrush.label(text="Hammer Brushes")
+        rowBrush1 = boxBrush.row()
+        rowBrush2 = boxBrush.row()
+        rowBrush3 = boxBrush.row()
 
-        rowVMF1.prop(bpy.context.scene.SrcEngCollProperties, "VMF_Export_Dir")
-        rowVMF2.prop(bpy.context.scene.SrcEngCollProperties, "VMF_Texture")
-        rowVMF3.operator("object.src_eng_vmf_export")
+        rowBrush1.prop(bpy.context.scene.SrcEngCollProperties, "VMF_Export_Dir")
+        rowBrush2.prop(bpy.context.scene.SrcEngCollProperties, "VMF_Texture")
+        rowBrush3.operator("object.src_eng_vmf_export")
         
 # End of classes
 
@@ -3316,11 +3259,9 @@ classes = (
     CopyQCOverrides,
     ClearQCOverrides,
     Cleanup_MergeAdjacentSimilars,
-    Cleanup_RemoveThinHulls,
-    Cleanup_MergeThinHulls,
-    Cleanup_FindThinHulls,
+    Cleanup_ProcessThinHulls,
     Cleanup_ForceConvex,
-    Cleanup_RemoveInsideHulls,
+    Cleanup_ProcessInsideHulls,
     Cleanup_CountHulls,
     CleanupCollection,
     RecommendedCollSettings,
