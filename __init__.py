@@ -11,7 +11,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (2, 4, 0),
+    "version": (2, 4, 1),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -2634,7 +2634,7 @@ class RecommendedCollSettings(bpy.types.Operator):
 # Update VMF operator
 
 class UpdateVMF(bpy.types.Operator):
-    """Automatically adds any split-up (ie. mymodel_part_000.mdl) collision models in the 'Collision Models' collection to the VMF, if they aren't already contained in it. IMPORTANT: The first part, '_part_000.mdl' must be added manually to VMF"""
+    """Automatically adds any split-up (ie. phys_part_000.mdl) collision models from the 'Collision Models' collection to your VMF, if they aren't already in the VMF. IMPORTANT: The first part, '_part_000.mdl' must be added manually to VMF as a prop_static or prop_dynamic"""
     bl_idname = "object.src_eng_vmf_update"
     bl_label = "Update VMF"
     bl_options = {'REGISTER'}
@@ -2669,7 +2669,6 @@ class UpdateVMF(bpy.types.Operator):
             bpy.data.objects[o].name = o.lower()
             o = o.lower()
 
-        print(f"List of collision objs: {objs}")
         objs.sort()
 
         print("Opening VMF file at: " + VMF_path)
@@ -2705,7 +2704,7 @@ class UpdateVMF(bpy.types.Operator):
                 new_entity_list = entities
                 removed_count = 0
                 for ent in entities:
-                    if "_part_" in ent:
+                    if "_phys_part_" in ent:
                         removed_count += 1
                         print("REMOVING ENTITY:\n\n")
                         print(ent)
@@ -2727,10 +2726,9 @@ class UpdateVMF(bpy.types.Operator):
             parts_zero_found = list()
             i = 0
 
-            # Scan entity list for needed data
+            # Scan entity list for part_000
             for ent in entities:
 
-                # Look for any _part_0.mdl
                 part_zero_found = re.search(part_zero_regex, ent, re.IGNORECASE |
                                             re.MULTILINE | re.DOTALL)
                 if part_zero_found:
@@ -2739,9 +2737,6 @@ class UpdateVMF(bpy.types.Operator):
                     print("Found part zero")
 
                 i += 1
-
-
-            print(f"{len(parts_zero_found)} parts zero found")
 
             new_entities_to_add = set()
 
@@ -2794,10 +2789,84 @@ class UpdateVMF(bpy.types.Operator):
                 display_msg_box(
                     "VMF file modified successfully\n"+f"Added {str(len(new_entities_to_add))} new entities to VMF.", "Info", "INFO")
             else:
+                vmf_file.close()
                 display_msg_box(
-                    "VMF is already up-to-date", "Info", "INFO")
+                    "VMF is already up-to-date.", "Info", "INFO")
 
         return {'FINISHED'}
+
+# Clean Duplicate Collision operator
+
+class CleanDuplicateVMF(bpy.types.Operator):
+    """Removes any duplicate partitioned collision entries ("_phys_part_") found in the VMF file"""
+    bl_idname = "object.src_eng_vmf_clean_duplicate"
+    bl_label = "Clean Duplicate Collision"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+
+        VMF_path = bpy.path.abspath(
+            bpy.context.scene.SrcEngCollProperties.VMF_File)
+
+        print("Opening VMF file at: " + VMF_path)
+        # Open VMF file for reading and parse data
+        with open(VMF_path, 'r+') as vmf_file:
+
+            total_length = len(vmf_file.readlines())
+
+            print(str(total_length) + " lines loaded from VMF file.")
+            vmf_file.seek(0)
+
+            contents = vmf_file.read()
+
+            # Make sure it's a real VMF file first
+            if "versioninfo" not in contents[0:30]:
+                display_msg_box(
+                    "Please select a valid VMF file and try again", "Error", "ERROR")
+                return {'FINISHED'}
+
+            # Setup Regex
+            entities_regex = r'^[a-z_]+\n\{\n(?:.*?)^(?:\})\n'
+            model_regex = r'"model"\s*"([^"]+)"'
+
+            # Parse VMF for entities
+            entities = re.findall(
+                entities_regex, contents, re.IGNORECASE | re.MULTILINE | re.DOTALL)
+            print(str(len(entities)) +
+                    " entities were found in the VMF.")
+
+            # Duplicate check
+            models_seen = []
+            new_entity_list = []
+            removed_count = 0
+
+            for ent in entities:
+
+                if "_phys_part_" in ent and ("prop_static" in ent or "prop_dynamic" in ent):
+
+                    mdl = re.search(model_regex, ent, re.MULTILINE)
+                    print("\nmdl found:\n"+mdl.group(1))
+
+                    if mdl.group(1) not in models_seen:
+                        models_seen.append(mdl.group(1))
+                    else:
+                        removed_count += 1
+                        continue
+
+                new_entity_list.append(ent)
+
+            if removed_count > 0:
+                vmf_file.close()
+                with open(VMF_path, 'w') as vmf_file:
+                    vmf_file.writelines(new_entity_list)
+                    vmf_file.write("\n")
+                    display_msg_box(
+                        "VMF file modified successfully\n"+f"Removed {str(removed_count)} duplicates from the VMF.", "Info", "INFO")
+            else:
+                display_msg_box(
+                    "No duplicate collision parts were found in the VMF file.", "Info", "INFO")
+            vmf_file.close()
+            return {'FINISHED'}
 
 # Export VMF operator
 
@@ -3045,6 +3114,7 @@ ops = (
     RecommendedCollSettings,
     CleanupCollection,
     UpdateVMF,
+    CleanDuplicateVMF,
     ExportVMF,
     UnrealRename
 )
@@ -3224,10 +3294,14 @@ class MESH_PT_SrcEngCollGen_SubPanel_Compile(bpy.types.Panel):
         boxVMF = layout.box()
         rowVMF1 = boxVMF.row()
         rowVMF2 = boxVMF.row()
+        boxVMF2 = boxVMF.box()
+        rowVMF3 = boxVMF2.row()
+        rowVMF4 = boxVMF2.row()
         rowVMF1.prop(bpy.context.scene.SrcEngCollProperties, "VMF_File")
         rowVMF2.prop(bpy.context.scene.SrcEngCollProperties, "VMF_Remove")
-        rowVMF2.operator("object.src_eng_vmf_update")
-        rowVMF2.enabled = len(
+        rowVMF3.operator("object.src_eng_vmf_update")
+        rowVMF4.operator("object.src_eng_vmf_clean_duplicate")
+        boxVMF2.enabled = len(
             bpy.context.scene.SrcEngCollProperties.VMF_File) > 0
         
         # Export as Brushes
@@ -3266,6 +3340,7 @@ classes = (
     CleanupCollection,
     RecommendedCollSettings,
     UpdateVMF,
+    CleanDuplicateVMF,
     ExportVMF,
     UnrealRename
 )
