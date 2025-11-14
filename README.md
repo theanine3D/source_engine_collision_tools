@@ -21,7 +21,7 @@ Note that all of the "Generate" features support the Decimate Ratio setting, to 
 - **Merge Adjacent Similars** - Merges convex hulls with similar adjacent hulls aggressively, lowering the final amount of hulls & producing a (potentially) less accurate, but more performant model. Similarity is based on the face count and volume of the hulls.
 - **Remove/Merge/Select Thin Hulls** - Thinness tools that can quickly isolate, merge, or remove any convex hulls that are significantly smaller than all other hulls.
 - **Force Convex** - Forces all existing hulls in every selected collision model to be convex. Especially useful after using Blender's built-in Decimate modifier on an existing collision mesh, to ensure that any decimated hulls are still convex.
-- **Find/Remove Inside Hulls** - Finds (and optionally) removes any hulls that are completely or almost completely buried inside other hulls.
+- **Find/Remove Inside Hulls** - Finds and (optionally) removes any hulls that are completely or almost completely buried inside other hulls.
 - **Generate Source Engine QC** - Automatically generate QC files for one or more collision model(s), allowing you to quickly compile them with batch compile tools out there (ie. [Crowbar](https://developer.valvesoftware.com/wiki/Crowbar))
   - Supports adding custom QC commands via a QC Override system. This allows you to, for example, add a custom "$scale" or "$surfaceprop" command to all generated QC files.
 - **Update VMF** - Updates a selected VMF file by automatically adding any partitioned/split-up collision models that haven't already been added to the map.
