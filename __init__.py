@@ -11,7 +11,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (2, 4, 1),
+    "version": (2, 4, 2),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -1605,7 +1605,11 @@ class GenerateFromBisection(bpy.types.Operator):
             phys_dimensions = mathutils.Vector((obj_phys.dimensions.x, obj_phys.dimensions.y))
             bool_modifier = obj_phys.modifiers.new(name="BisectBoolean", type='BOOLEAN')
             bool_modifier.object = obj_bbox
-            bool_modifier.solver = 'FAST'
+
+            if bpy.app.version < (5, 0, 0):
+                bool_modifier.solver = 'FAST'
+            else:
+                bool_modifier.solver = 'FLOAT'
             bool_dimensions = get_modified_dimensions(obj_phys)
 
             # Compare the dimensions with boolean modifier ENABLED, to check if the boolean modifier has unwanted artifacts
@@ -2467,6 +2471,14 @@ class GenerateSourceQC(bpy.types.Operator):
         mats_dir = bpy.context.scene.SrcEngCollProperties.QC_Src_Mats_Dir
         dirs = [bpy.context.scene.SrcEngCollProperties.QC_Folder,
                 models_dir, mats_dir]
+
+        # Check if QC folder exists
+        if not os.path.exists(QC_folder):
+            display_msg_box(
+                f"The specified QC folder does not exist:\n{QC_folder}", 
+                "Error", "ERROR"
+            )
+            return {'CANCELLED'}
 
         # Check for trailing slashes
         for dir in dirs:
