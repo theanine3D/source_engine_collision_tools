@@ -11,7 +11,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (2, 4, 2),
+    "version": (2, 4, 3),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -51,13 +51,6 @@ class SrcEngCollProperties(bpy.types.PropertyGroup):
         soft_max=1,
         min=0,
         default=0.02)
-    Voxel_Resolution: bpy.props.FloatProperty(
-        name="Voxel Resolution",
-        subtype="FACTOR",
-        description="Used by the Generate Fractured Collision operator",
-        soft_max=10,
-        min=0.0001,
-        default=0.05)
     Extrusion_Modifier: bpy.props.FloatProperty(
         name="Extrude Factor",
         description="The setting affects the extrusion of each hull. Default will work in most cases",
@@ -1155,7 +1148,6 @@ class GenerateFromFracture(bpy.types.Operator):
 
         if len(objs) >= 1:
             fracture_target = bpy.context.scene.SrcEngCollProperties.Fracture_Target
-            voxel_res = bpy.context.scene.SrcEngCollProperties.Voxel_Resolution
             gap_width = bpy.context.scene.SrcEngCollProperties.Fracture_Gap
             total_hull_count = 0
             
@@ -1200,11 +1192,18 @@ class GenerateFromFracture(bpy.types.Operator):
                     location=False, rotation=True, scale=True)
                 bpy.ops.object.shade_smooth()
 
-                # Voxel remesh
-                remesh = obj_phys.modifiers.new(name="RM", type="REMESH")
-                remesh.voxel_size = voxel_res
-                bpy.ops.object.convert(target='MESH')
-                
+                # Attempt to seal any non-manifold areas first
+                bpy.ops.object.mode_set(mode="EDIT")
+                bpy.ops.mesh.reveal()
+                bpy.ops.mesh.select_all(action='DESELECT')
+                bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='EDGE')
+                bpy.ops.mesh.select_non_manifold()
+                try:
+                    bpy.ops.mesh.fill(use_beauty=True)
+                except:
+                    print("No non-manifold geometry found in object: " + obj_phys.name)
+                bpy.ops.object.mode_set(mode="OBJECT")
+               
                 # Cell Fracture, based on the Fracture Target set by user
                 bpy.ops.object.add_fracture_cell_objects(source={'VERT_OWN'}, source_limit=fracture_target, recursion=0, use_smooth_faces=False, use_sharp_edges=False, use_sharp_edges_apply=False, use_data_match=False, use_island_split=False, margin=gap_width, material_index=0, use_interior_vgroup=False, use_recenter=False, use_debug_redraw=False)
                 bpy.context.view_layer.objects.active = bpy.context.selected_objects[0]
@@ -2631,14 +2630,11 @@ class RecommendedCollSettings(bpy.types.Operator):
             avg_length = get_avg_length(obj)
             extrude_modifier = avg_length * 0.07
             gap_width = avg_dimensions / 106.77
-            voxel_res = avg_dimensions / 42.708
 
             bpy.context.scene.SrcEngCollProperties.Extrusion_Modifier = extrude_modifier
             bpy.context.scene.SrcEngCollProperties.Gap_Width = gap_width
-            bpy.context.scene.SrcEngCollProperties.Voxel_Resolution = voxel_res
             print("Recommended Settings:")
             print("- Extrusion Modifier: " + str(extrude_modifier))
-            print("- Voxel Resolution: " + str(voxel_res))
             print("- Gap Width: " + str(gap_width))
 
         return {'FINISHED'}
@@ -3194,11 +3190,9 @@ class MESH_PT_SrcEngCollGen_SubPanel_Generate(bpy.types.Panel):
         rowFractGen2 = boxFractGen.row()
         rowFractGen2.prop(bpy.context.scene.SrcEngCollProperties, "Fracture_Target")
         rowFractGen3 = boxFractGen.row()
-        rowFractGen3.prop(bpy.context.scene.SrcEngCollProperties, "Voxel_Resolution")
+        rowFractGen3.prop(bpy.context.scene.SrcEngCollProperties, "Fracture_Gap")
         rowFractGen4 = boxFractGen.row()
-        rowFractGen4.prop(bpy.context.scene.SrcEngCollProperties, "Fracture_Gap")
-        rowFractGen5 = boxFractGen.row()
-        rowFractGen5.operator("object.src_eng_gen_fracture")
+        rowFractGen4.operator("object.src_eng_gen_fracture")
 
         boxBisectGen = rowBisectGen.box()
         boxBisectGen.label(text="Bisection")
