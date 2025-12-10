@@ -11,7 +11,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (2, 4, 4),
+    "version": (2, 4, 5),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -1192,6 +1192,8 @@ class GenerateFromFracture(bpy.types.Operator):
                     location=False, rotation=True, scale=True)
                 bpy.ops.object.shade_smooth()
 
+                split_parts = []
+
                 # Attempt to seal any non-manifold areas
                 bpy.ops.object.mode_set(mode="EDIT")
                 bpy.ops.mesh.reveal()
@@ -1214,13 +1216,18 @@ class GenerateFromFracture(bpy.types.Operator):
                 bpy.ops.object.mode_set(mode="EDIT")
                 bpy.ops.mesh.select_all(action='SELECT')
                 bpy.ops.mesh.quads_convert_to_tris(quad_method='BEAUTY', ngon_method='BEAUTY')
+                bpy.ops.mesh.separate(type='LOOSE')
                 bpy.ops.object.mode_set(mode="OBJECT")
+
+                split_parts = bpy.context.selected_objects                    
 
                 # Cell Fracture, based on the Fracture Target set by user
                 bpy.ops.object.add_fracture_cell_objects(source = {'VERT_OWN'}, source_limit = fracture_target, source_noise = 0.0, cell_scale = (1.0, 1.0, 1.0), recursion = 0, recursion_source_limit = 8, recursion_clamp = 250, recursion_chance = 0.25, recursion_chance_select = 'SIZE_MIN', use_smooth_faces = False, use_sharp_edges = False, use_sharp_edges_apply = False, use_data_match = False, use_island_split = False, margin = gap_width, material_index = 0, use_interior_vgroup = False, mass_mode = 'VOLUME', mass = 1.0, use_recenter = True, use_remove_original = True, use_debug_points = False, use_debug_redraw = False, use_debug_bool = False)
                 bpy.context.view_layer.objects.active = bpy.context.selected_objects[0]
                 bpy.ops.object.join()
-                bpy.data.objects.remove(obj_phys)
+
+                for split_part in split_parts:
+                    bpy.data.objects.remove(split_part)
                 obj_phys = bpy.context.active_object
 
                 shrinkwrap_modifier = obj_phys.modifiers.new(name="ShrinkwrapPhys", type='SHRINKWRAP')
@@ -1599,7 +1606,6 @@ class GenerateFromBisection(bpy.types.Operator):
             bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
             set_origin(obj.location)
 
-
             obj_bbox.select_set(False)
             obj_bbox.hide_set(False)
             obj_phys.hide_set(False)
@@ -1607,23 +1613,27 @@ class GenerateFromBisection(bpy.types.Operator):
             bpy.context.view_layer.objects.active = obj_phys
 
             phys_dimensions = mathutils.Vector((obj_phys.dimensions.x, obj_phys.dimensions.y))
-            bool_modifier = obj_phys.modifiers.new(name="BisectBoolean", type='BOOLEAN')
-            print(f"obj_bbox = {obj_bbox.name}")
-            bool_modifier.object = obj_bbox
 
-            if bpy.app.version < (5, 0, 0):
-                bool_modifier.solver = 'FAST'
-            else:
-                bool_modifier.solver = 'FLOAT'
-            bool_dimensions = get_modified_dimensions(obj_phys)
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_all(action='SELECT')
+            bpy.ops.mesh.separate(type='LOOSE')
+            bpy.ops.object.mode_set(mode='OBJECT')
+            split_parts = bpy.context.selected_objects                    
+            obj_phys = bpy.context.active_object
+            
+            for split_part in split_parts:
+                bool_modifier = split_part.modifiers.new(name="BisectBoolean", type='BOOLEAN')
+                bool_modifier.object = obj_bbox
 
-            # Compare the dimensions with boolean modifier ENABLED, to check if the boolean modifier has unwanted artifacts
-            if bool_dimensions != phys_dimensions:
-                print("\nSetting boolean solver to EXACT mode due to dimensions warning\n")
-                bool_modifier.solver = 'EXACT'
+                if bpy.app.version < (5, 0, 0):
+                    bool_modifier.solver = 'FAST'
+                else:
+                    bool_modifier.solver = 'FLOAT'
 
-            with bpy.context.temp_override(object=obj_phys):
-                bpy.ops.object.modifier_apply(modifier="BisectBoolean")
+                with bpy.context.temp_override(object=split_part):
+                    bpy.ops.object.modifier_apply(modifier="BisectBoolean")
+            
+            bpy.ops.object.join()
 
             # Some cleanup on the boolean'd result
             bpy.ops.object.mode_set(mode='EDIT')
