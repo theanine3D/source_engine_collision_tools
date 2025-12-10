@@ -11,7 +11,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (2, 4, 3),
+    "version": (2, 4, 4),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -1192,44 +1192,45 @@ class GenerateFromFracture(bpy.types.Operator):
                     location=False, rotation=True, scale=True)
                 bpy.ops.object.shade_smooth()
 
-                # Attempt to seal any non-manifold areas first
+                # Attempt to seal any non-manifold areas
                 bpy.ops.object.mode_set(mode="EDIT")
                 bpy.ops.mesh.reveal()
                 bpy.ops.mesh.select_all(action='DESELECT')
-                bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='EDGE')
+                bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT')
                 bpy.ops.mesh.select_non_manifold()
-                try:
-                    bpy.ops.mesh.fill(use_beauty=True)
-                except:
-                    print("No non-manifold geometry found in object: " + obj_phys.name)
+                bpy.ops.mesh.edge_face_add()
                 bpy.ops.object.mode_set(mode="OBJECT")
-               
+                if len([e for e in obj_phys.data.edges if e.select == True]) > 0:
+                    bpy.ops.object.mode_set(mode="EDIT")
+                    bpy.ops.mesh.delete(type='FACE')
+                    bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT')
+                    bpy.ops.mesh.select_non_manifold()
+                    bpy.ops.object.mode_set(mode="OBJECT")
+                    if len([e for e in obj_phys.data.edges if e.select == True]) > 0:
+                        bpy.ops.object.mode_set(mode="EDIT")
+                        bpy.ops.mesh.delete(type='FACE')
+                else:
+                    print("No non-manifold geometry found in object: " + obj_phys.name)
+                bpy.ops.object.mode_set(mode="EDIT")
+                bpy.ops.mesh.select_all(action='SELECT')
+                bpy.ops.mesh.quads_convert_to_tris(quad_method='BEAUTY', ngon_method='BEAUTY')
+                bpy.ops.object.mode_set(mode="OBJECT")
+
                 # Cell Fracture, based on the Fracture Target set by user
-                bpy.ops.object.add_fracture_cell_objects(source={'VERT_OWN'}, source_limit=fracture_target, recursion=0, use_smooth_faces=False, use_sharp_edges=False, use_sharp_edges_apply=False, use_data_match=False, use_island_split=False, margin=gap_width, material_index=0, use_interior_vgroup=False, use_recenter=False, use_debug_redraw=False)
+                bpy.ops.object.add_fracture_cell_objects(source = {'VERT_OWN'}, source_limit = fracture_target, source_noise = 0.0, cell_scale = (1.0, 1.0, 1.0), recursion = 0, recursion_source_limit = 8, recursion_clamp = 250, recursion_chance = 0.25, recursion_chance_select = 'SIZE_MIN', use_smooth_faces = False, use_sharp_edges = False, use_sharp_edges_apply = False, use_data_match = False, use_island_split = False, margin = gap_width, material_index = 0, use_interior_vgroup = False, mass_mode = 'VOLUME', mass = 1.0, use_recenter = True, use_remove_original = True, use_debug_points = False, use_debug_redraw = False, use_debug_bool = False)
                 bpy.context.view_layer.objects.active = bpy.context.selected_objects[0]
                 bpy.ops.object.join()
                 bpy.data.objects.remove(obj_phys)
                 obj_phys = bpy.context.active_object
 
-                # Decimate loop
-                if len(obj.data.polygons) > 100:
-                    while len(obj_phys.data.polygons) > (len(obj.data.polygons) * 1.5):
-                        bpy.ops.object.mode_set(mode="EDIT")
-                        bpy.ops.mesh.select_all(action='SELECT')
-                        bpy.ops.mesh.decimate(ratio=0.75)
-                        bpy.ops.mesh.select_all(action='DESELECT')
-                        bpy.ops.object.mode_set(mode="OBJECT")
+                shrinkwrap_modifier = obj_phys.modifiers.new(name="ShrinkwrapPhys", type='SHRINKWRAP')
+                shrinkwrap_modifier.target = obj
 
-                # Decimate and Limited dissolve
-                bpy.ops.object.mode_set(mode="EDIT")
-                bpy.ops.mesh.select_all(action='SELECT')
-                bpy.ops.mesh.decimate(
-                    ratio=bpy.context.scene.SrcEngCollProperties.Decimate_Ratio)
-                bpy.ops.mesh.dissolve_limited(
-                    angle_limit=0.16, delimit={'NORMAL'})
-                bpy.ops.mesh.quads_convert_to_tris(
-                    quad_method='BEAUTY', ngon_method='BEAUTY')
-                bpy.ops.object.mode_set(mode="OBJECT")
+                if bpy.app.version >= (3, 2, 0):
+                    with bpy.context.temp_override(object=obj_phys):
+                        bpy.ops.object.modifier_apply(modifier="ShrinkwrapPhys")
+                else:
+                    bpy.ops.object.modifier_apply(modifier="ShrinkwrapPhys")                
             
                 total_hull_count += force_convex([obj_phys])
 
@@ -1269,16 +1270,7 @@ class GenerateFromFracture(bpy.types.Operator):
                 new_origin = tuple(obj.location)
                 bpy.context.scene.cursor.location = new_origin
                 bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
-
-                # Remove non-manifold and degenerates
-                bpy.ops.object.mode_set(mode='EDIT')
-                bpy.ops.mesh.select_mode(
-                    use_extend=False, use_expand=False, type='VERT')
-                bpy.ops.mesh.select_all(action='DESELECT')
-                bpy.ops.mesh.select_non_manifold()
-                bpy.ops.mesh.select_linked(delimit=set())
-                bpy.ops.mesh.delete(type='VERT')
-                
+               
                 # Cleanup materials
                 bpy.ops.object.mode_set(mode='OBJECT')
                 obj_phys.data.materials.clear()
@@ -1316,6 +1308,12 @@ class GenerateFromBisection(bpy.types.Operator):
                 "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
 
             return {'FINISHED'}
+        if bpy.app.version < (3, 2, 0):
+            display_msg_box(
+                "This feature is only available in Blender 3.2 or later.", "Info", "INFO")
+
+            return {'FINISHED'}
+            
         
         gap_width = bpy.context.scene.SrcEngCollProperties.Bisect_Gap
         cuts = bpy.context.scene.SrcEngCollProperties.Bisections
@@ -1333,6 +1331,7 @@ class GenerateFromBisection(bpy.types.Operator):
             obj_phys = obj.copy()
             obj_phys.data = obj.data.copy()
             obj_phys.name = obj.name.lower() + "_phys"
+            obj.name = obj.name.lower()
             bpy.context.collection.objects.link(obj_phys)
             obj_phys.select_set(True)
             obj.select_set(False)
@@ -1576,8 +1575,13 @@ class GenerateFromBisection(bpy.types.Operator):
             bpy.context.view_layer.objects.active = obj_bbox
             solidify_modifier = obj_bbox.modifiers.new(name="BisectSolidify", type='SOLIDIFY')
             solidify_modifier.thickness = obj_bbox.dimensions.z * gap_width
-            with bpy.context.temp_override(object=obj_bbox):
-                bpy.ops.object.modifier_apply(modifier="BisectSolidify")
+
+            if bpy.app.version >= (3, 2, 0):
+                with bpy.context.temp_override(object=obj_bbox):
+                    bpy.ops.object.modifier_apply(modifier="BisectSolidify")
+            else:
+                bpy.ops.object.modifier_apply(modifier="BisectSolidify")                
+
             force_convex([obj_bbox])
 
             bpy.ops.object.mode_set(mode='EDIT')
@@ -1597,12 +1601,14 @@ class GenerateFromBisection(bpy.types.Operator):
 
 
             obj_bbox.select_set(False)
+            obj_bbox.hide_set(False)
             obj_phys.hide_set(False)
             obj_phys.select_set(True)
             bpy.context.view_layer.objects.active = obj_phys
 
             phys_dimensions = mathutils.Vector((obj_phys.dimensions.x, obj_phys.dimensions.y))
             bool_modifier = obj_phys.modifiers.new(name="BisectBoolean", type='BOOLEAN')
+            print(f"obj_bbox = {obj_bbox.name}")
             bool_modifier.object = obj_bbox
 
             if bpy.app.version < (5, 0, 0):
