@@ -11,7 +11,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (2, 5, 0),
+    "version": (2, 5, 1),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -50,7 +50,7 @@ class SrcEngCollProperties(bpy.types.PropertyGroup):
         description="How large or small the gap between hulls should be. Used only by the Fracture generation method",
         soft_max=1,
         min=0,
-        default=0.02)
+        default=0.01)
     Extrusion_Modifier: bpy.props.FloatProperty(
         name="Extrude Factor",
         description="The setting affects the extrusion of each hull. Default will work in most cases",
@@ -133,7 +133,7 @@ class SrcEngCollProperties(bpy.types.PropertyGroup):
         description="How big the gap should be between bisected sections. Used only by the Bisection generator",
         min=0.001,
         max=.3,
-        default=.02)
+        default=.01)
     Bisections: bpy.props.IntProperty(
         name="Bisections",
         subtype="UNSIGNED",
@@ -219,12 +219,11 @@ def get_current_mode():
     return obj.mode
 
 def get_avg_length(obj):
-    object = bpy.context.active_object
-    edges = object.data.edges
+    edges = obj.data.edges
     lengths = list()
     for edge in edges:
-        v0 = object.data.vertices[edge.vertices[0]]
-        v1 = object.data.vertices[edge.vertices[1]]
+        v0 = obj.data.vertices[edge.vertices[0]]
+        v1 = obj.data.vertices[edge.vertices[1]]
         x2 = (v0.co[0] - v1.co[0]) ** 2
         y2 = (v0.co[1] - v1.co[1]) ** 2
         z2 = (v0.co[2] - v1.co[2]) ** 2
@@ -1641,6 +1640,11 @@ class GenerateFromBisection(bpy.types.Operator):
             bpy.ops.object.mode_set(mode='OBJECT')
             split_parts = bpy.context.selected_objects                    
             obj_phys = bpy.context.active_object
+
+            # Store the bbox vertex locations so we can remove them later
+            bbox_vert_coords = []
+            for vert in obj_bbox.data.vertices:
+                bbox_vert_coords.append(vert.co)
             
             for split_part in split_parts:
                 phys_dimensions = mathutils.Vector((split_part.dimensions.x, split_part.dimensions.y))
@@ -1676,6 +1680,14 @@ class GenerateFromBisection(bpy.types.Operator):
             bpy.ops.mesh.reveal()
             bpy.ops.mesh.normals_make_consistent(inside=False)
             bpy.ops.mesh.select_all(action='DESELECT')
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+            # Remove unwanted bbox vertices if any remain due to boolean artifacts
+            for vert in obj_phys.data.vertices:
+                if vert.co in bbox_vert_coords:
+                    vert.select = True
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.delete(type='VERT')
             bpy.ops.object.mode_set(mode='OBJECT')
 
             bpy.data.objects.remove(obj_bbox)
@@ -2799,13 +2811,16 @@ class RecommendedCollSettings(bpy.types.Operator):
 
             avg_length = get_avg_length(obj)
             extrude_modifier = avg_length * 0.07
-            gap_width = avg_dimensions / 106.77
+            fracture_gap = avg_length / 522.507
+            bisect_gap = avg_length / 522.507
 
             bpy.context.scene.SrcEngCollProperties.Extrusion_Modifier = extrude_modifier
-            bpy.context.scene.SrcEngCollProperties.Gap_Width = gap_width
+            bpy.context.scene.SrcEngCollProperties.Fracture_Gap = fracture_gap
+            bpy.context.scene.SrcEngCollProperties.Bisect_Gap = bisect_gap
             print("Recommended Settings:")
             print("- Extrusion Modifier: " + str(extrude_modifier))
-            print("- Gap Width: " + str(gap_width))
+            print("- Fracture Gap Width: " + str(fracture_gap))
+            print("- Bisect Gap Width: " + str(bisect_gap))
 
         return {'FINISHED'}
 
