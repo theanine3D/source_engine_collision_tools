@@ -11,7 +11,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (2, 5, 1),
+    "version": (2, 5, 2),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -2809,10 +2809,18 @@ class RecommendedCollSettings(bpy.types.Operator):
                 avg_dimensions += d
             avg_dimensions = avg_dimensions / 3
 
+            bisect_mode = bpy.context.scene.SrcEngCollProperties.Bisect_Mode
+
             avg_length = get_avg_length(obj)
             extrude_modifier = avg_length * 0.07
             fracture_gap = avg_length / 522.507
-            bisect_gap = avg_length / 522.507
+
+            if bisect_mode == "xy":
+                bisect_gap = obj.dimensions.z / 638000
+            elif bisect_mode == "z":
+                bisect_gap = obj.dimensions.y / 1132195
+            else:
+                bisect_gap = ((obj.dimensions.z / 638000) + (obj.dimensions.y / 1132195)) / 2
 
             bpy.context.scene.SrcEngCollProperties.Extrusion_Modifier = extrude_modifier
             bpy.context.scene.SrcEngCollProperties.Fracture_Gap = fracture_gap
