@@ -11,7 +11,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (2, 5, 2),
+    "version": (3, 0, 0),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -29,85 +29,109 @@ class SrcEngCollProperties(bpy.types.PropertyGroup):
     Post_Merge: bpy.props.BoolProperty(
         name="Post-Merge",
         description="Can dramatically reduce the hull count for smaller or individual props. Leave this disabled if you're generating collision for entire rooms, levels, or any objects with interior cavities",
-        default=False)
+        default=False
+        )
     Decimate_Ratio: bpy.props.FloatProperty(
         name="Decimate Ratio",
         subtype="FACTOR",
         description="At 1.0, decimation is disabled. Lower value = stronger decimation, resulting in less accurate but more performant collision mesh. Note: Decimation reduces effectiveness of Merge Adjacent Similars",
         max=1.0,
         min=0.0,
-        default=1)
+        default=1
+        )
     Fracture_Target: bpy.props.IntProperty(
         name="Fracture Target",
         subtype="UNSIGNED",
         description="This setting is used to limit how many hulls are generated via Fracture",
         soft_max=32,
         min=2,
-        default=4)
+        default=4
+        )
     Fracture_Gap: bpy.props.FloatProperty(
         name="Gap Width",
         subtype="FACTOR",
         description="How large or small the gap between hulls should be. Used only by the Fracture generation method",
         soft_max=1,
         min=0,
-        default=0.01)
+        default=0.01
+        )
     Extrusion_Modifier: bpy.props.FloatProperty(
         name="Extrude Factor",
         description="The setting affects the extrusion of each hull. Default will work in most cases",
         min=0.001,
         soft_max=200.0,
-        default=40.0)
+        default=40.0
+        )
     Merge_Distance: bpy.props.FloatProperty(
         name="Merge Distance",
         description="A value higher than zero will cause close-together vertices to merge, resulting in a more performant (but potentially less accurate) collision mesh",
         min=0.0001,
         soft_max=1,
-        default=0.0001)
+        default=0.0001
+        )
     Similar_Factor: bpy.props.FloatProperty(
         name="Similar Factor",
-        subtype="FACTOR",
+        subtype="PERCENTAGE",
         description="Percentage of similarity between hulls that is required in order for them to be merged together. At the default setting, hulls must be 90 percent similar in order to be merged",
-        min=.5,
-        max=1.0,
-        default=.9)
+        min=50,
+        max=100,
+        default=90
+        )
     Thin_Threshold: bpy.props.FloatProperty(
         name="Thin Threshold",
-        subtype="FACTOR",
-        description="The thinness threshold to use when removing thin hulls. If set to default, the operator will only remove faces with an area that is lower than 10 percent of the average area of all faces",
-        min=0.0001,
-        max=.5,
-        default=.01)
+        subtype="PERCENTAGE",
+        description="The thinness threshold to use when removing thin hulls. If set to default, the operator will only remove faces with an area that is lower than 1 percent of the average area of all faces",
+        min=0.01,
+        max=50,
+        default=1
+        )
+    Thin_Mode: bpy.props.EnumProperty(
+        items= [
+                ("find", "Find", "Finds thin hulls, based on the Thin Threshold setting. The hulls are highlighted in Edit Mode, without any modification"),
+                ("merge", "Merge", "Merges thin hulls with adjacent hulls (if any), based on the Thin Threshold setting"),
+                ("remove", "Remove", "Removes thin hulls, based on the Thin Threshold setting")
+                ],
+        name="Mode",
+        description="The method of action to use when processing thin hulls in the selected object(s)",
+        default="find"
+        )
     QC_Folder: bpy.props.StringProperty(
         name="QC Folder",
         subtype="DIR_PATH",
         description="Full path of the folder in which to save the generated QCs",
         default="/export/phys/",
-        maxlen=1024)
+        maxlen=1024
+        )
     QC_Src_Models_Dir: bpy.props.StringProperty(
         name="Models Path",
         description="Path of the folder where your compiled models are stored in the Source Engine game directory. This is the $modelname path from your QC files, but without the model filename/extension at the end. Must end with a trailing slash '/'",
         default="mymodels/",
-        maxlen=1024)
+        maxlen=1024
+        )
     QC_Src_Mats_Dir: bpy.props.StringProperty(
         name="Materials Path",
         description="Path of the folder where your VMT and VTF files are stored in the Source Engine game directory. This is the $cdmaterials path from your QC files.  Must end with a trailing slash '/'",
         default="models/mymodels/",
-        maxlen=1024)
+        maxlen=1024
+        )
     QC_SurfaceProp: bpy.props.StringProperty(
         name="Surface Property",
         description="The $surfaceprop setting to assign in the generated QC files. Can be left to default if you don't care about the type of footstep sounds that play when players walk on this collision",
         default="default",
-        maxlen=40)
+        maxlen=40
+        )
     VMF_File: bpy.props.StringProperty(
         name="VMF File",
         subtype="FILE_PATH",
         description="Path of the VMF map file, created in Hammer or some other mapping tool' ",
         default="",
-        maxlen=1024)
+        maxlen=1024
+        )
     VMF_Remove: bpy.props.BoolProperty(
         name="Remove Mode",
         description="If enabled, the 'Update VMF' button will REMOVE partitioned ('_phys_part_') collision models from the VMF along with their corresponding entity (ie. prop_static). Can't be undone. Keep a backup VMF just in case",
-        default=False)
+        default=False
+        )
     VMF_Export_Dir: bpy.props.StringProperty(
         name="Export to",
         subtype='DIR_PATH',
@@ -126,21 +150,23 @@ class SrcEngCollProperties(bpy.types.PropertyGroup):
         name="Brush Texture",
         description="The texture to apply to brushes exported as VMF",
         default="tools/toolsnodraw"
-    )
+        )
     Bisect_Gap: bpy.props.FloatProperty(
         name="Gap Width",
         subtype="FACTOR",
         description="How big the gap should be between bisected sections. Used only by the Bisection generator",
         min=0.001,
         max=.3,
-        default=.01)
+        default=.01
+        )
     Bisections: bpy.props.IntProperty(
         name="Bisections",
         subtype="UNSIGNED",
         description="How many times should the model be bisected along the middle by the Bisection generator",
         soft_max=32,
         min=2,
-        default=4)
+        default=4
+        )
     Bisect_Mode: bpy.props.EnumProperty(
         items= [
                 ("xy", "Sides", "Cuts along the X/Y axes, resulting in horizontally flat hulls"),
@@ -150,24 +176,15 @@ class SrcEngCollProperties(bpy.types.PropertyGroup):
         name="Mode",
         description="The method used when bisecting the model to generate the hulls",
         default="xy"
-    )
+        )
     Split_Increment: bpy.props.IntProperty(
         name="Split Increment",
         subtype="UNSIGNED",
         description="Some versions of Source Engine have a higher or lower limit than the default of 32 hulls per collision mesh. If you're not sure, just use the default setting",
         soft_max=40,
         min=2,
-        default=32)
-    Thin_Mode: bpy.props.EnumProperty(
-        items= [
-                ("find", "Find", "Finds thin hulls, based on the Thin Threshold setting. The hulls are highlighted in Edit Mode, without any modification"),
-                ("merge", "Merge", "Merges thin hulls with adjacent hulls (if any), based on the Thin Threshold setting"),
-                ("remove", "Remove", "Removes thin hulls, based on the Thin Threshold setting")
-                ],
-        name="Mode",
-        description="The method of action to use when processing thin hulls in the selected object(s)",
-        default="find"
-    )
+        default=32
+        )
     Inside_Mode: bpy.props.EnumProperty(
         items= [
                 ("find", "Find", "Finds hulls that are mostly or entirely inside another hull. The hulls are highlighted in Edit Mode, without any modification"),
@@ -176,9 +193,23 @@ class SrcEngCollProperties(bpy.types.PropertyGroup):
         name="Mode",
         description="The method of action to use when processing inside hulls in the selected object(s)",
         default="find"
-    )
-    
-# FUNCTION DEFINITIONS
+        )
+    Strength_Threshold: bpy.props.FloatProperty(
+        name="Strength Threshold",
+        description="How strong a weight must be in order to be included for collision. A higher value will result in fewer hulls, while a lower value will result in more",
+        subtype="PERCENTAGE",
+        min=20,
+        max=100,
+        default=40
+        )
+    Skip_Size: bpy.props.FloatProperty(
+        name="Skip Size",
+        subtype="PERCENTAGE",
+        description="Any hulls smaller than this size will be omitted from the final resulting collision. This can be used to skip small body parts like finger and toes, for example. If you don't want ANY hulls to be skipped, set this to zero",
+        min=0,
+        max=50,
+        default=1
+        )# FUNCTION DEFINITIONS
 
 
 def display_msg_box(message="", title="Info", icon='INFO'):
@@ -379,6 +410,32 @@ def generate_QC_lines(obj, models_dir, mats_dir, surfaceprop):
 
     return QC_template
 
+
+def generate_QCI_lines(obj, surfaceprop, root_bone, vertex_groups):
+    QCI_template = list()
+    QCI_template.append(f'$surfaceprop "{surfaceprop.lower()}"\n\n\n')
+    QCI_template.append(f"$collisionjoints {obj.name}" + " {\n\n")
+    QCI_template.append('\t$mass 90.0\n')
+    QCI_template.append('\t$inertia 2.00\n')
+    QCI_template.append('\t$damping 0.01\n')
+    QCI_template.append('\t$rotdamping 0.4\n')
+    QCI_template.append(f'\t$rootbone "{root_bone}"\n')
+    QCI_template.append('\t$animatedfriction 1 1000 0.8 0.0 0.5"\n')
+    QCI_template.append('\n')
+
+    vertex_groups = [vg for vg in vertex_groups if vg]
+    for vertex_group in vertex_groups:
+            
+        QCI_template.append(f'\t$jointconstrain "{vertex_group.name}" x limit -50.00 50.00 1.00\n')
+        QCI_template.append(f'\t$jointconstrain "{vertex_group.name}" y limit -50.00 50.00 1.00\n')
+        QCI_template.append(f'\t$jointconstrain "{vertex_group.name}" z limit -50.00 50.00 1.00\n\n')
+
+    QCI_template.append('}\n\n')
+    QCI_template.append('$sequence ragdoll "ragdoll_pose" FPS 30 activity ACT_DIERAGDOLL 1')
+
+    return QCI_template
+
+
 def bmesh_walk_hull(vert):
     ''' Walk all un-tagged linked verts '''
     vert.tag = True
@@ -453,12 +510,28 @@ def get_3d_viewport():
                 return area
     return None
 
-def force_convex(objs):
+def force_convex(objs, preserve_weights = False):
     if len(objs) >= 1:
         for obj in objs:
             obj.select_set(False)
 
         total_hull_count = 0
+
+        if preserve_weights:
+            # Check for any rigged collision
+            rigged_objs = []
+            for obj in objs:
+                if obj.parent != None:
+                    if obj.parent.type == "ARMATURE" and len(obj.vertex_groups) > 0:
+                        rigged_objs.append(obj)
+
+            # If rigged collision was found, duplicate it so we can restore the weights later
+            duplicates = {}
+            if len(rigged_objs) > 0:
+                for rigged_obj in rigged_objs:
+                    duplicate = rigged_obj.copy()
+                    duplicate.data = duplicate.data.copy()
+                    duplicates[rigged_obj.name] = duplicate
 
         for obj in objs:
             bpy.ops.object.select_all(action='DESELECT')
@@ -547,7 +620,46 @@ def force_convex(objs):
             bpy.ops.mesh.normals_make_consistent(inside=False)
             bpy.ops.mesh.select_all(action='DESELECT')
             bpy.ops.object.mode_set(mode='OBJECT')
-            
+
+    # For any rigged collision, use the Data Transfer modifier to copy the original weights back
+    if preserve_weights:
+        if len(rigged_objs) > 0:
+            for rigged_obj in rigged_objs:
+                bpy.ops.object.select_all(action='DESELECT')
+                rigged_obj.select_set(True)
+                bpy.context.view_layer.objects.active = rigged_obj
+                data_transfer_modifier = rigged_obj.modifiers.new(name="CopyWeights",type="DATA_TRANSFER")
+                data_transfer_modifier.object = duplicates[rigged_obj.name]
+                data_transfer_modifier.use_vert_data = True
+                data_transfer_modifier.data_types_verts = {'VGROUP_WEIGHTS'}
+                data_transfer_modifier.layers_vgroup_select_src = 'ALL'
+                data_transfer_modifier.layers_vgroup_select_dst = 'NAME'
+                bpy.ops.object.datalayout_transfer(modifier="CopyWeights")
+
+                if bpy.app.version >= (3, 2, 0):
+                    with bpy.context.temp_override(object=rigged_obj):
+                        bpy.ops.object.modifier_apply(modifier="CopyWeights")
+                else:
+                    bpy.ops.object.modifier_apply(modifier="CopyWeights")
+
+                bpy.data.objects.remove(duplicates[rigged_obj.name])
+                del duplicates[rigged_obj.name]
+
+                # Purge any unassigned weights
+                groups_to_remove = []
+                for vertex_group in obj.vertex_groups:
+                    index = vertex_group.index
+                    amount_assigned = 0
+                    for vert in obj.data.vertices:
+                        if len(vert.groups) > 0:
+                            for assigned_group in vert.groups:
+                                if assigned_group.weight > 0 and assigned_group.group == index:
+                                        amount_assigned += 1
+                    if amount_assigned == 0:
+                        groups_to_remove.append(vertex_group.name)
+                for group in groups_to_remove:
+                    obj.vertex_groups.remove(obj.vertex_groups[group])        
+
     return total_hull_count
 
 def set_origin(location):
@@ -1113,7 +1225,7 @@ class GenerateFromUVMap(bpy.types.Operator):
 # Fracture Generator operator
 
 class GenerateFromFracture(bpy.types.Operator):
-    """Produces a more accurate collision mesh that conforms better to the original shape. Works best on competely sealed objects with no holes. Requires the Cell Fracture addon to be enabled in Blender preferences"""
+    """Generates a collision mesh by simulating the fracture of the original mesh into multiple random pieces. Works best on completely sealed objects with no holes. Requires the Cell Fracture addon to be enabled in Blender preferences"""
     bl_idname = "object.src_eng_gen_fracture"
     bl_label = "Generate Collision via Fracture"
     bl_options = {'REGISTER'}
@@ -1863,6 +1975,230 @@ class GenerateFromBisection(bpy.types.Operator):
 
         return {'FINISHED'}
 
+class GenerateFromWeights(bpy.types.Operator):
+    """Generate a collision mesh based on the rigged weights (ie. vertex groups) of the model, for use in dynamic collision, such as for ragdolls or animation"""
+    bl_idname = "object.src_eng_gen_weights"
+    bl_label = "Generate Collision from Weights"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        objs = check_for_selected()
+        if objs == False or get_current_mode() != "OBJECT":
+            display_msg_box(
+                "At least one mesh object must be selected, in Object Mode.", "Info", "INFO")
+
+            return {'FINISHED'}
+
+        original_undo = bpy.context.preferences.edit.use_global_undo
+        bpy.context.preferences.edit.use_global_undo = False
+
+        obj_results = []
+
+        if len(objs) >= 1:
+            for obj in objs:
+                obj.select_set(False)
+
+            total_hull_count = 0
+            strength_threshold = bpy.context.scene.SrcEngCollProperties.Strength_Threshold * 0.01
+            skip_size = bpy.context.scene.SrcEngCollProperties.Skip_Size * 0.01
+
+            for obj in objs:
+
+                # Check if this mesh object even has any vertex groups first. If it doesn't, skip it.
+                if len(obj.vertex_groups) == 0:
+                    continue
+
+                bpy.ops.object.select_all(action='DESELECT')
+
+                root_collection = None
+                if 'Collision Models' in bpy.data.collections.keys():
+                    root_collection = bpy.data.collections['Collision Models']
+                    bpy.context.view_layer.layer_collection.children.get("Collision Models").exclude = False
+                else:
+                    root_collection = bpy.data.collections.new("Collision Models")
+                    bpy.context.scene.collection.children.link(root_collection)
+
+                obj_collections = [
+                    c for c in bpy.data.collections if obj.name in c.objects.keys()]
+
+                obj_phys = None
+                collection_phys = None
+
+                bpy.ops.object.mode_set(mode="OBJECT")
+                bpy.context.view_layer.objects.active = obj
+                obj.select_set(True)
+
+                if (obj.name + "_phys") in bpy.data.objects.keys():
+                    bpy.data.objects.remove(bpy.data.objects[obj.name + "_phys"])
+
+                bpy.ops.object.duplicate(linked=False)
+                obj.hide_set(True)
+                obj_phys = bpy.context.active_object
+                obj_phys.name = obj.name + "_phys"
+
+                bpy.ops.object.make_single_user(object=True, obdata=True)
+                bpy.ops.object.transform_apply(
+                    location=True, rotation=True, scale=True)
+                bpy.ops.object.shade_smooth()
+                bpy.ops.object.mode_set(mode="EDIT")
+                bpy.ops.mesh.reveal()
+                bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT')
+                bpy.ops.mesh.select_all(action='DESELECT')
+                bpy.ops.object.mode_set(mode="OBJECT")
+
+                # Gather list of vertex groups that meet the user's specified settings
+                vertex_groups = {}
+                for vert in obj_phys.data.vertices:
+                    if len(vert.groups) > 0:
+                        for group in vert.groups:
+                            group_index = group.group
+                            
+                            if group.weight >= strength_threshold:
+
+                                # Check if there are stronger weights on the same vertex
+                                dominant = True
+                                if len(vert.groups) > 1:
+                                    for othergroup in vert.groups:
+                                        if othergroup.weight > group.weight:
+                                            dominant = False
+                                            break
+                                        
+                                if dominant == True:
+                                    group_name = obj_phys.vertex_groups[group_index].name
+                                    if group_name not in vertex_groups:
+                                        vertex_groups[group_name] = []
+                                    vertex_groups[group_name].append(vert.index)
+
+                    # If zero vertex groups are assigned to this vertex, skip it
+                    else:
+                        continue
+
+                # Remove any marked groups if they only have a tiny amount of vertices assigned
+                remove_list = []
+                for group in vertex_groups.keys():
+                    if len(vertex_groups[group]) < 4:
+                        remove_list.append(group)
+                for group in remove_list:
+                    del vertex_groups[group]
+
+                # Split up geometry into loose separate pieces, for each marked vertex group
+                hull_parts = []
+                for marked_group in vertex_groups.keys():
+                    bpy.ops.object.mode_set(mode="EDIT")
+                    bpy.ops.mesh.select_all(action='DESELECT')
+                    bpy.ops.object.mode_set(mode="OBJECT")
+                    for vert in obj_phys.data.vertices:
+                        if len(vert.groups) > 0:
+                            for marked_vert in vertex_groups[marked_group]:
+                                if vert.index == marked_vert:
+                                    vert.select = True
+
+                    # Convert the new loose piece into a convex hull
+                    bpy.ops.object.mode_set(mode="EDIT")
+                    bpy.ops.mesh.duplicate_move()
+                    bpy.ops.mesh.separate(type='SELECTED')
+                    bpy.ops.object.mode_set(mode="OBJECT")
+                    hull_part = bpy.context.selected_objects[1]
+                    hull_parts.append(hull_part)
+
+                    bpy.context.view_layer.objects.active = hull_part
+                    bpy.context.selected_objects[0].select_set(False)
+                    bpy.ops.object.mode_set(mode="EDIT")
+                    bpy.ops.mesh.select_all(action='SELECT')
+                    bpy.ops.mesh.decimate(
+                        ratio=bpy.context.scene.SrcEngCollProperties.Decimate_Ratio)
+                    bpy.ops.mesh.dissolve_limited(
+                        angle_limit=0.174533, delimit={'NORMAL'})
+                    bpy.ops.mesh.quads_convert_to_tris(
+                        quad_method='BEAUTY', ngon_method='BEAUTY')
+                    bpy.ops.mesh.convex_hull(join_triangles=False)
+                    bpy.ops.object.mode_set(mode="OBJECT")
+
+                    for group in hull_part.vertex_groups:
+                        if group.name != marked_group:
+                            hull_part.vertex_groups.remove(group)
+                    hull_part.vertex_groups[marked_group].add([vert.index for vert in hull_part.data.vertices],1.0,type="REPLACE")
+                    hull_part.name = "VERTGROUP_" + marked_group
+                    hull_part.select_set(False)
+                    total_hull_count += 1
+                    bpy.context.view_layer.objects.active = obj_phys
+                    obj_phys.select_set(True)
+
+                bpy.data.objects.remove(obj_phys)
+                for part in hull_parts:
+                    part.select_set(True)
+                bpy.context.view_layer.objects.active = hull_parts[0]
+                bpy.ops.object.join()
+                obj_phys = bpy.context.active_object
+                obj_phys.name = obj.name + "_phys"
+
+                if skip_size > 0:
+                    bpy.ops.object.mode_set(mode="EDIT")
+                    bpy.ops.mesh.select_all(action='DESELECT')
+                    bpy.ops.object.mode_set(mode="OBJECT")
+                    skip_amount = select_thin_hulls(obj_phys, skip_size)
+                    bpy.ops.object.mode_set(mode="EDIT")
+                    bpy.ops.mesh.delete(type='VERT')
+                    bpy.ops.object.mode_set(mode="OBJECT")
+                    total_hull_count -= skip_amount
+
+                # Begin finalizing
+                bpy.ops.object.mode_set(mode="EDIT")
+                bpy.ops.mesh.select_all(action='SELECT')
+                bpy.ops.mesh.normals_make_consistent(inside=False)
+                bpy.ops.object.mode_set(mode='OBJECT')
+                bpy.ops.object.shade_smooth()
+
+                # Setup collection
+                if (obj_phys.name.lower()) in bpy.data.collections.keys():
+                    collection_phys = bpy.data.collections[obj_phys.name.lower()]
+                else:
+                    collection_phys = bpy.data.collections.new(obj_phys.name.lower())
+                    root_collection.children.link(collection_phys)
+
+                collection_phys.objects.link(obj_phys)
+
+                # Unlink the new collision model from other collections
+                for c in obj_collections:
+                    if obj_phys.name in c.objects.keys():
+                        c.objects.unlink(obj_phys)
+                if obj_phys.name in bpy.context.scene.collection.objects.keys():
+                    bpy.context.scene.collection.objects.unlink(obj_phys)
+
+                # Replace spaces with underscores - otherwise compiling the QC can fail due to misread syntax
+                obj_phys.name = obj_phys.name.strip().replace(" ","_")
+                obj.name = obj.name.lower().strip().replace(" ","_")
+                collection_phys.name = collection_phys.name.strip().replace(" ","_")
+
+                # Cleanup materials
+                bpy.ops.object.mode_set(mode='OBJECT')
+                bpy.context.active_object.data.materials.clear()
+                if "phys" not in bpy.data.materials.keys():
+                    bpy.data.materials.new("phys")
+                bpy.context.active_object.data.materials.append(
+                    bpy.data.materials["phys"])
+                bpy.context.active_object.data.materials[0].diffuse_color = (
+                    1, 0, 0.78315, 1)
+
+                # Finalize transforms and restore the original object's origin point
+                bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+                bpy.context.scene.cursor.location = tuple(obj.location)
+                bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
+                                    
+                obj_results.append(obj_phys.name)
+                obj.select_set(False)
+
+        display_msg_box(
+            "Generated rigged collision mesh(es) with total hull count of " + str(total_hull_count) + ".", "Info", "INFO")
+
+        for obj in obj_results:
+            bpy.data.objects[obj].select_set(True)
+
+        bpy.context.preferences.edit.use_global_undo = original_undo
+
+        return {'FINISHED'}
+    
+
 # Split Up Collision Mesh operator
 
 class SplitUpSrcCollision(bpy.types.Operator):
@@ -2055,7 +2391,7 @@ class Cleanup_MergeAdjacentSimilars(bpy.types.Operator):
         if len(objs) >= 1:
             initial_hull_count = 0
             merged_count = 0
-            similarity_threshold = bpy.context.scene.SrcEngCollProperties.Similar_Factor
+            similarity_threshold = bpy.context.scene.SrcEngCollProperties.Similar_Factor * 0.01
             active_obj = bpy.context.active_object
             if active_obj.type != "MESH":
                 active_obj = objs[0]
@@ -2304,7 +2640,7 @@ class Cleanup_ProcessThinHulls(bpy.types.Operator):
 
         if len(objs) >= 1:
             amount_selected = 0
-            thin_threshold = bpy.context.scene.SrcEngCollProperties.Thin_Threshold
+            thin_threshold = bpy.context.scene.SrcEngCollProperties.Thin_Threshold * 0.01
 
             active_obj = bpy.context.active_object
             if active_obj.type != "MESH":
@@ -2358,9 +2694,7 @@ class Cleanup_ProcessThinHulls(bpy.types.Operator):
 
         return {'FINISHED'}
 
-
 # Force Convex operator
-
 
 class Cleanup_ForceConvex(bpy.types.Operator):
     """Forces all existing hulls in the selected object to be convex. Warning: This operator will remove any non-manifold geometry, along with UV maps and vertex colors"""
@@ -2380,7 +2714,8 @@ class Cleanup_ForceConvex(bpy.types.Operator):
         if active_obj.type != "MESH":
             active_obj = objs[0]
 
-        total_hull_count = force_convex(objs)
+        total_hull_count = force_convex(objs, preserve_weights=True)
+
         for obj in objs:
             obj.select_set(True)
         bpy.context.view_layer.objects.active = active_obj
@@ -2616,7 +2951,7 @@ class Cleanup_Shrinkwrap(bpy.types.Operator):
                 else:
                     bpy.ops.object.modifier_apply(modifier="ShrinkwrapPhys")
 
-                force_convex([obj])
+                force_convex([obj], preserve_weights=True)
 
                 count += 1
 
@@ -2635,7 +2970,6 @@ class Cleanup_Shrinkwrap(bpy.types.Operator):
 
 
 # Generate Source Engine QC
-
 
 class GenerateSourceQC(bpy.types.Operator):
     """Generate QC files for all collision meshes stored in the Collision Models collection in your Blender file. These QC files can be used to compile the models for Source Engine"""
@@ -2717,6 +3051,113 @@ class GenerateSourceQC(bpy.types.Operator):
 
         return {'FINISHED'}
     
+
+# Generate Source Engine QC
+
+class GenerateRagdollQCI(bpy.types.Operator):
+    """Generate a ragdoll .QCI file for every *rigged* collision mesh, with $collisionjoint lines automatically generated based on your armature(s). You can use the $include command in your main QC file to load the .QCI file"""
+    bl_idname = "object.src_eng_ragdoll_qci"
+    bl_label = "Generate Ragdoll QCI"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        
+        surfaceprop = bpy.context.scene.SrcEngCollProperties.QC_SurfaceProp
+        QC_folder = bpy.path.abspath(
+            bpy.context.scene.SrcEngCollProperties.QC_Folder)
+        models_dir = bpy.context.scene.SrcEngCollProperties.QC_Src_Models_Dir
+        mats_dir = bpy.context.scene.SrcEngCollProperties.QC_Src_Mats_Dir
+        dirs = [bpy.context.scene.SrcEngCollProperties.QC_Folder,
+                models_dir, mats_dir]
+
+        # Check if QC folder exists
+        if not os.path.exists(QC_folder):
+            display_msg_box(
+                f"The specified QC folder does not exist:\n{QC_folder}", 
+                "Error", "ERROR"
+            )
+            return {'CANCELLED'}
+
+        # Check for trailing slashes
+        for dir in dirs:
+            if not dir.endswith("\\") and not dir.endswith("/"):
+                display_msg_box(
+                    "One of your specified QC directories is missing a trailing slash (\\ or /) at the end.\nAdd one first and then try again", "Error", "ERROR")
+                return {'FINISHED'}
+
+        # Get the Collision Models collection
+        root_collection = None
+        if 'Collision Models' in bpy.data.collections.keys():
+            if len(bpy.data.collections["Collision Models"].all_objects) > 0:
+                root_collection = bpy.data.collections['Collision Models']
+                bpy.context.view_layer.layer_collection.children.get("Collision Models").exclude = False
+            else:
+                display_msg_box(
+                    "There are no collision models in the 'Collision Models' collection. Place your collision models there first", "Error", "ERROR")
+        else:
+            display_msg_box(
+                "There is no 'Collision Models' collection. Please create one with that exact name, and then place your collision models inside it", "Error", "ERROR")
+        if root_collection == None:
+            return {'FINISHED'}
+
+        # Create list of all rigged collision meshes
+        objs = [obj for obj in root_collection.all_objects if not obj.hide_get() and obj.type == "MESH" and obj.parent != None and len(obj.vertex_groups) > 0]
+        if len(objs) == 0:
+            display_msg_box(
+            "There are no visible rigged collision models in the 'Collision Models' collection. Ensure that each rigged collision mesh is not hidden, and has at least 1 vertex group.", "Error", "ERROR")
+            return {'FINISHED'}
+        else:
+            objs = [obj for obj in objs if obj.parent.type == "ARMATURE"]
+            if len(objs) == 0:
+                display_msg_box(
+                "Please ensure that each rigged collision mesh has an Armature set as its parent.", "Error", "ERROR")
+                return {'FINISHED'}
+        
+        # Replace spaces with underscores for all collision meshes - otherwise compiling the QC can fail due to misread syntax
+        for obj in objs:
+            if " " in obj.name:
+                obj.name = obj.name.strip().replace(" ","_")
+        for coll in root_collection.children.keys():
+            if " " in coll:
+                bpy.data.collections[coll].name = coll.strip().replace(" ","_")
+
+        # Generate QC file for every object
+        for obj in objs:
+
+            # Determine the root bone of the armature
+            root_bone = None
+            if "ValveBiped.Bip01_Pelvis" in obj.parent.data.bones.keys():
+                root_bone = "ValveBiped.Bip01_Pelvis"
+            else:
+                for bone in obj.parent.data.bones:
+                    if bone.parent is None:
+                        root_bone = bone.name
+                        break
+                
+            # Purge any unassigned weights
+            groups_to_remove = []
+            for vertex_group in obj.vertex_groups:
+                index = vertex_group.index
+                amount_assigned = 0
+                for vert in obj.data.vertices:
+                    if len(vert.groups) > 0:
+                        for assigned_group in vert.groups:
+                            if assigned_group.weight > 0 and assigned_group.group == index:
+                                    amount_assigned += 1
+                if amount_assigned == 0:
+                    groups_to_remove.append(vertex_group.name)
+            for group in groups_to_remove:
+                obj.vertex_groups.remove(obj.vertex_groups[group])        
+
+            with open(f"{QC_folder}{obj.name}.qci", 'w') as qci_file:
+                qci_file.writelines(generate_QCI_lines(
+                    obj, surfaceprop, root_bone, vertex_groups=obj.vertex_groups))
+
+        display_msg_box("QCI file(s) generated successfully in " + QC_folder +
+                        "\n\nNOTE: You still need to manually tweak the values in the .QCI file, especally the $jointconstrain limits. Use HLMV to test your changes.", "Info", "INFO")
+
+        return {'FINISHED'}
+        
 # Copy QC Overrides to Selected
 
 class CopyQCOverrides(bpy.types.Operator):
@@ -3254,7 +3695,7 @@ class CleanupCollection(bpy.types.Operator):
                     bpy.data.collections.remove(bpy.data.collections[c])
 
             display_msg_box("Removed " + str(removed_count) +
-                            " collection(s)", "Info", "INFO")
+                            " collection(s).", "Info", "INFO")
         else:
             display_msg_box(
                 "There is no 'Collision Models' collection to clean up", "Info", "INFO")
@@ -3303,8 +3744,10 @@ ops = (
     GenerateFromUVMap,
     GenerateFromFracture,
     GenerateFromBisection,
+    GenerateFromWeights,
     SplitUpSrcCollision,
     GenerateSourceQC,
+    GenerateRagdollQCI,
     CopyQCOverrides,
     ClearQCOverrides,
     Cleanup_MergeAdjacentSimilars,
@@ -3368,6 +3811,8 @@ class MESH_PT_SrcEngCollGen_SubPanel_Generate(bpy.types.Panel):
         rowFractGen = layout.row()
         rowSeparator1= layout.row()
         rowBisectGen = layout.row()
+        rowSeparator2= layout.row()
+        rowRiggedGen = layout.row()
 
         rowGen.operator("object.src_eng_recc_settings")       
         row1.prop(bpy.context.scene.SrcEngCollProperties, "Decimate_Ratio")
@@ -3388,6 +3833,7 @@ class MESH_PT_SrcEngCollGen_SubPanel_Generate(bpy.types.Panel):
         rowFractGen4 = boxFractGen.row()
         rowFractGen4.operator("object.src_eng_gen_fracture")
 
+        # Bisect Generator UI
         boxBisectGen = rowBisectGen.box()
         boxBisectGen.label(text="Bisection")
         rowBisectGen1 = boxBisectGen.row()
@@ -3397,6 +3843,16 @@ class MESH_PT_SrcEngCollGen_SubPanel_Generate(bpy.types.Panel):
         rowBisectGen2.prop(bpy.context.scene.SrcEngCollProperties, "Bisect_Mode")
         rowBisectGen3 = boxBisectGen.row()
         rowBisectGen3.operator("object.src_eng_gen_bisect")
+
+        # Bone Generator UI
+        boxRiggedGen = rowRiggedGen.box()
+        boxRiggedGen.label(text="Rigged")
+        rowRiggedGen1 = boxRiggedGen.row()
+        rowRiggedGen2 = boxRiggedGen.row()
+        rowRiggedGen3 = boxRiggedGen.row()
+        rowRiggedGen1.prop(bpy.context.scene.SrcEngCollProperties, "Strength_Threshold")
+        rowRiggedGen2.prop(bpy.context.scene.SrcEngCollProperties, "Skip_Size")
+        rowRiggedGen3.operator("object.src_eng_gen_weights")
 
 class MESH_PT_SrcEngCollGen_SubPanel_Cleanup(bpy.types.Panel):
     bl_parent_id = "MESH_PT_src_eng_coll_gen"
@@ -3426,7 +3882,7 @@ class MESH_PT_SrcEngCollGen_SubPanel_Cleanup(bpy.types.Panel):
         rowCleanup8 = boxCleanup.row()
         rowCleanup9 = boxCleanup.row()
         rowCleanup10 = boxCleanup.row()
-        rowCleanup12_Label = boxCleanup.row()
+        rowCleanup11_Label = boxCleanup.row()
         rowCleanup11 = boxCleanup.row()
         rowCleanup12 = boxCleanup.row()
         rowCleanup13 = boxCleanup.row()
@@ -3452,12 +3908,12 @@ class MESH_PT_SrcEngCollGen_SubPanel_Cleanup(bpy.types.Panel):
         rowCleanup8.operator("object.src_eng_cleanup_force_convex")
         rowCleanup9.operator("object.src_eng_cleanup_shrinkwrap")
         rowCleanup10.operator("object.src_eng_cleanup_count_hulls")
-        rowCleanup11.operator("object.src_eng_cleanup_collection")
         
-        rowCleanup12_Label.label(text="Splitting")
-        rowCleanup12.prop(
+        rowCleanup11_Label.label(text="Splitting")
+        rowCleanup11.prop(
             bpy.context.scene.SrcEngCollProperties, "Split_Increment")
-        rowCleanup13.operator("object.src_eng_split")
+        rowCleanup12.operator("object.src_eng_split")
+        rowCleanup13.operator("object.src_eng_cleanup_collection")
 
 class MESH_PT_SrcEngCollGen_SubPanel_Compile(bpy.types.Panel):
     bl_parent_id = "MESH_PT_src_eng_coll_gen"
@@ -3481,6 +3937,7 @@ class MESH_PT_SrcEngCollGen_SubPanel_Compile(bpy.types.Panel):
         rowQC5 = boxQC.row()
         rowQC6 = boxQC.row()
         rowQC7 = boxQC.row()
+        rowQC8 = boxQC.row()
 
         rowQC1.prop(bpy.context.scene.SrcEngCollProperties, "QC_Folder")
         rowQC2.prop(bpy.context.scene.SrcEngCollProperties,
@@ -3490,8 +3947,9 @@ class MESH_PT_SrcEngCollGen_SubPanel_Compile(bpy.types.Panel):
             bpy.context.scene.SrcEngCollProperties.QC_Src_Models_Dir) > 0 and len(bpy.context.scene.SrcEngCollProperties.QC_Src_Mats_Dir) > 0
         rowQC4.prop(bpy.context.scene.SrcEngCollProperties, "QC_SurfaceProp")
         rowQC5.operator("object.src_eng_qc")
-        rowQC6.operator("object.copy_qc_overrides")
-        rowQC7.operator("object.clear_qc_overrides")
+        rowQC6.operator("object.src_eng_ragdoll_qci")
+        rowQC7.operator("object.copy_qc_overrides")
+        rowQC8.operator("object.clear_qc_overrides")
 
         boxVMF = layout.box()
         rowVMF1 = boxVMF.row()
@@ -3530,8 +3988,10 @@ classes = (
     GenerateFromUVMap,
     GenerateFromFracture,
     GenerateFromBisection,
+    GenerateFromWeights,
     SplitUpSrcCollision,
     GenerateSourceQC,
+    GenerateRagdollQCI,
     CopyQCOverrides,
     ClearQCOverrides,
     Cleanup_MergeAdjacentSimilars,
