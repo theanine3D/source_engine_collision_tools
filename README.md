@@ -10,7 +10,7 @@ Need help with the addon? You can join [my Discord server](https://discord.gg/43
 ## Features
 Some features are customizeable and can be tweaked via optional settings. There is also a "Recommended Settings" button that will automatically guess the best settings for you based on the currently selected, active object.
 Note that all of the "Generate" features support the Decimate Ratio setting, to automatically reduce the complexity of the resulting collision model.
-- **Generate Collision via Bisection** - Generate a collision model for every currently selected object, by dividing the model into sections.
+- **Generate Collision via Bisection** - Generate a collision model for every currently selected object, by evenly dividing the model into sections.
 - **Generate Collision from Weights** - Generates a collision mesh for the currently selected objects, based on each object's rigged weights (if they exist). Can be used to quickly create ragdoll physics meshes for Garry's Mod
 - **Generate Collision from Faces** - Generate a collision model for every currently selected object, based on the mesh's faces/polygons.
 - **Generate Collision via UV Map** - Generates a collision mesh for the currently selected objects, based on each object's UV Map. Each UV island becomes a separate hull.
