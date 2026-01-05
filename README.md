@@ -24,6 +24,7 @@ Note that all of the "Generate" features support the Decimate Ratio setting, to 
 - **Find/Remove Inside Hulls** - Finds and (optionally) removes any hulls that are completely or almost completely buried inside other hulls.
 - **Generate Source Engine QC** - Automatically generate QC files for one or more collision model(s), allowing you to quickly compile them with batch compile tools out there (ie. [Crowbar](https://developer.valvesoftware.com/wiki/Crowbar))
   - Supports adding custom QC commands via a QC Override system. This allows you to, for example, add a custom "$scale" or "$surfaceprop" command to all generated QC files.
+- **Generate Ragdoll QCI** - Generates a ragdoll .QCI file for every *rigged* collision mesh, with $collisionjoint lines automatically generated based on your armature's specific bones. You can use the $include command in your main QC file to load the .QCI file.
 - **Update VMF** - Updates a selected VMF file by automatically adding any partitioned/split-up collision models that haven't already been added to the map.
 - **Clean Duplicate Collision** - Removes any duplicate collision entries ("_phys_part_") found in the user's specified VMF file.
 - **Export Hulls to Hammer .VMF** - Converts hulls in the selected collision mesh(es) into Source Engine brush solids and exports them as a .VMF file that can be opened in Hammer.
