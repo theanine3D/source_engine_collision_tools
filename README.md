@@ -71,6 +71,10 @@ This video below shows some newer features that have been added since the previo
 
 [![YouTube Video](https://github.com/user-attachments/assets/7244d17f-90cb-40fc-9117-e9aa341ea8d5)](https://youtu.be/yWF5ngntf5A)
 
+An overview of the rigged collision feature in the addon.
+
+[![YouTube Video](https://youtu.be/XA83EQjGdx0)](https://youtu.be/XA83EQjGdx0)
+
 ### Gallery
 The maps below were created using Source Engine Collision Tools. They are great examples of what this addon makes possible.
 - #### Saturn Valley - TF2 map by Theanine3D
