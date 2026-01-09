@@ -73,7 +73,8 @@ This video below shows some newer features that have been added since the previo
 
 An overview of the rigged collision feature in the addon.
 
-[![YouTube Video](https://youtu.be/XA83EQjGdx0)](https://youtu.be/XA83EQjGdx0)
+[![YouTube Video](https://github.com/user-attachments/assets/ce148c9a-d3bb-40b0-8c30-9349cce53023)](https://youtu.be/XA83EQjGdx0)
+
 
 ### Gallery
 The maps below were created using Source Engine Collision Tools. They are great examples of what this addon makes possible.
