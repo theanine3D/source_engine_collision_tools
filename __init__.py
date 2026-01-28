@@ -11,7 +11,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (3, 0, 0),
+    "version": (3, 1, 0),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -2146,6 +2146,8 @@ class GenerateFromWeights(bpy.types.Operator):
                 bpy.ops.object.mode_set(mode="EDIT")
                 bpy.ops.mesh.select_all(action='SELECT')
                 bpy.ops.mesh.normals_make_consistent(inside=False)
+                bpy.ops.mesh.mark_sharp(clear=True)
+                bpy.ops.mesh.mark_seam(clear=True)
                 bpy.ops.object.mode_set(mode='OBJECT')
                 bpy.ops.object.shade_smooth()
 
@@ -2892,6 +2894,134 @@ class Cleanup_ProcessInsideHulls(bpy.types.Operator):
             else:
                 display_msg_box(
                     "No inside hulls found.", "Info", "INFO")
+
+        bpy.context.preferences.edit.use_global_undo = original_undo
+
+        return {'FINISHED'}
+    
+
+# Find Multiweighted Hulls operator
+
+class Cleanup_FindMultiweightedHulls(bpy.types.Operator):
+    """Finds rigged hulls that incorrectly have more than 1 vertex group assigned. Note that Source Engine requires that each hull have ONLY a single vertex group assigned in order for ragdoll collision to compile properly"""
+    bl_idname = "object.src_eng_cleanup_find_multiweighted"
+    bl_label = "Find Multiweighted Hulls"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        objs = check_for_selected()
+        if objs == False or get_current_mode() != "OBJECT":
+            display_msg_box(
+                "At least one valid rigged mesh object must be selected, in Object Mode.", "Info", "INFO")
+
+            return {'FINISHED'}
+
+        original_undo = bpy.context.preferences.edit.use_global_undo
+        bpy.context.preferences.edit.use_global_undo = False
+
+        if len(objs) >= 1:
+            active_obj = bpy.context.active_object
+            if active_obj.type != "MESH":
+                active_obj = objs[0]
+            
+            rigged_objs = []
+            for obj in objs:
+                if obj.parent != None:
+                    if obj.parent.type == "ARMATURE" and len(obj.vertex_groups) > 0:
+                        rigged_objs.append(obj)
+
+            if len(rigged_objs) == 0:
+                display_msg_box(
+                    "At least one *rigged* mesh object (meaning at least 1 vertex group assigned, along with an Armature modifier) must be selected, in Object Mode.", "Info", "INFO")
+                return {'FINISHED'}
+            
+            for obj in objs:
+                obj.select_set(False)
+
+            amount_to_select = 0
+                 
+            for obj in rigged_objs:
+
+                bpy.ops.object.select_all(action='DESELECT')
+
+                bpy.context.view_layer.objects.active = obj
+                obj.select_set(True)
+
+                original_name = obj.name
+                original_origin = obj.location.copy()
+
+                # Make sure no faces are selected
+                bpy.ops.object.mode_set(mode='OBJECT')
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.reveal()
+                bpy.ops.mesh.select_mode(type='VERT')
+                bpy.ops.mesh.select_all(action='DESELECT')
+                bpy.ops.object.mode_set(mode='OBJECT')
+
+                # Select all hulls and separate them into separate objects
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_all(action='SELECT')
+                bpy.ops.mesh.separate(type='LOOSE')
+                bpy.ops.object.mode_set(mode='OBJECT')
+                bpy.ops.object.origin_set(
+                    type='ORIGIN_GEOMETRY', center='MEDIAN')
+
+                hulls = [o for o in bpy.context.selected_objects]
+                hulls_to_select = set()
+
+                # Create list of hulls that have more than 1 vertex group
+                for hull in hulls:
+                    for v in hull.data.vertices:
+                        v.select = False
+                        vertex_index = v.index
+                        count_assigned = 0
+
+                        for vgroup in hull.vertex_groups:
+                            if count_assigned == 2:
+                                hulls_to_select.add(hull)
+                                break
+                            try:
+                                vgroup.weight(vertex_index)
+                                count_assigned += 1
+                            except:
+                                continue
+
+                bpy.ops.object.mode_set(mode='OBJECT')
+
+                amount_to_select += len(hulls_to_select)
+
+                # Mark vertices as selected in the multiweighted hulls
+                for h in hulls_to_select:
+                    for v in h.data.vertices:
+                        v.select = True
+
+                # Rejoin and clean up
+                bpy.context.view_layer.objects.active = bpy.context.selected_objects[0]
+                if len([o for o in bpy.context.selected_objects if o.hide_get() == False]) > 1:
+                    bpy.ops.object.join()
+
+                bpy.context.active_object.name = original_name
+                bpy.ops.object.transform_apply(
+                    location=False, rotation=True, scale=True)
+
+                # Restore the original object's origin point
+                original_cursor_location = bpy.context.scene.cursor.location.copy()
+                bpy.context.scene.cursor.location = original_origin.copy()
+                bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
+                bpy.context.scene.cursor.location = original_cursor_location
+
+            for obj in objs:
+                obj.select_set(True)
+            bpy.context.view_layer.objects.active = active_obj
+
+            if amount_to_select > 0:
+                bpy.ops.object.mode_set(mode="EDIT")
+                bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT')
+                display_msg_box(
+                    "Selected " + str(amount_to_select) + " multiweighted rigged hull(s).", "Info", "INFO")
+            else:
+                display_msg_box(
+                    "No multiweighted hulls found.", "Info", "INFO")
 
         bpy.context.preferences.edit.use_global_undo = original_undo
 
@@ -3756,6 +3886,7 @@ ops = (
     Cleanup_Shrinkwrap,
     Cleanup_ProcessInsideHulls,
     Cleanup_CountHulls,
+    Cleanup_FindMultiweightedHulls,
     RecommendedCollSettings,
     CleanupCollection,
     UpdateVMF,
@@ -3882,10 +4013,11 @@ class MESH_PT_SrcEngCollGen_SubPanel_Cleanup(bpy.types.Panel):
         rowCleanup8 = boxCleanup.row()
         rowCleanup9 = boxCleanup.row()
         rowCleanup10 = boxCleanup.row()
-        rowCleanup11_Label = boxCleanup.row()
         rowCleanup11 = boxCleanup.row()
+        rowCleanup12_Label = boxCleanup.row()
         rowCleanup12 = boxCleanup.row()
         rowCleanup13 = boxCleanup.row()
+        rowCleanup14 = boxCleanup.row()
 
         rowCleanup1_Label.label(text="Similarity")
         rowCleanup1.prop(
@@ -3907,13 +4039,14 @@ class MESH_PT_SrcEngCollGen_SubPanel_Cleanup(bpy.types.Panel):
         rowCleanup8_Label.label(text="Other")
         rowCleanup8.operator("object.src_eng_cleanup_force_convex")
         rowCleanup9.operator("object.src_eng_cleanup_shrinkwrap")
-        rowCleanup10.operator("object.src_eng_cleanup_count_hulls")
+        rowCleanup10.operator("object.src_eng_cleanup_find_multiweighted")
+        rowCleanup11.operator("object.src_eng_cleanup_count_hulls")
         
-        rowCleanup11_Label.label(text="Splitting")
-        rowCleanup11.prop(
+        rowCleanup12_Label.label(text="Splitting")
+        rowCleanup12.prop(
             bpy.context.scene.SrcEngCollProperties, "Split_Increment")
-        rowCleanup12.operator("object.src_eng_split")
-        rowCleanup13.operator("object.src_eng_cleanup_collection")
+        rowCleanup13.operator("object.src_eng_split")
+        rowCleanup14.operator("object.src_eng_cleanup_collection")
 
 class MESH_PT_SrcEngCollGen_SubPanel_Compile(bpy.types.Panel):
     bl_parent_id = "MESH_PT_src_eng_coll_gen"
@@ -4000,6 +4133,7 @@ classes = (
     Cleanup_Shrinkwrap,
     Cleanup_ProcessInsideHulls,
     Cleanup_CountHulls,
+    Cleanup_FindMultiweightedHulls,
     CleanupCollection,
     RecommendedCollSettings,
     UpdateVMF,
