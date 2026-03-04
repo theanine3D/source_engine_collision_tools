@@ -11,7 +11,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (3, 1, 0),
+    "version": (3, 1, 1),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -516,24 +516,17 @@ def force_convex(objs, preserve_weights = False):
             obj.select_set(False)
 
         total_hull_count = 0
+        rigged_objs = []
 
         if preserve_weights:
             # Check for any rigged collision
-            rigged_objs = []
             for obj in objs:
                 if obj.parent != None:
                     if obj.parent.type == "ARMATURE" and len(obj.vertex_groups) > 0:
                         rigged_objs.append(obj)
 
-            # If rigged collision was found, duplicate it so we can restore the weights later
-            duplicates = {}
-            if len(rigged_objs) > 0:
-                for rigged_obj in rigged_objs:
-                    duplicate = rigged_obj.copy()
-                    duplicate.data = duplicate.data.copy()
-                    duplicates[rigged_obj.name] = duplicate
-
         for obj in objs:
+            
             bpy.ops.object.select_all(action='DESELECT')
 
             bpy.context.view_layer.objects.active = obj
@@ -564,33 +557,50 @@ def force_convex(objs, preserve_weights = False):
             # Begin Bmesh processing
             me = obj.data
             bm = bmesh.new()
-            bm_processed = bmesh.new()
 
             bm.from_mesh(me)
+            bm.verts.ensure_lookup_table()
+            deform_layer = bm.verts.layers.deform.verify()
+
+            bm_processed = bm.copy()
+
             hulls = [hull for hull in bmesh_get_hulls(
                 bm, verts=bm.verts)]
 
+            bmesh.ops.delete(
+                bm_processed,
+                geom=bm_processed.verts,
+                context='VERTS')
+            
+            deform_layer_new = bm_processed.verts.layers.deform.verify()
+            
             # Create individual hull bmeshes
             for hull in hulls:
-                bm_hull = bmesh.new()
+
+                hull_vertex_group = None
+                if len(hull[0][deform_layer]) != 0:
+                    hull_vertex_group = hull[0][deform_layer].keys()[0]
 
                 # Add vertices to individual bmesh hull
+                new_verts = []
                 for vert in hull:
-                    bmesh.ops.create_vert(bm_hull, co=vert.co)
+                    new_verts.append(bmesh.ops.create_vert(bm_processed, co=vert.co)['vert'][0])
 
                 # Generate convex hull
                 ch = bmesh.ops.convex_hull(
-                    bm_hull, input=bm_hull.verts, use_existing_faces=False)
+                    bm_processed, input=new_verts, use_existing_faces=False)
                 bmesh.ops.delete(
-                    bm_hull,
+                    bm_processed,
                     geom=list(set(ch["geom_unused"] + ch["geom_interior"])),
                     context='VERTS')
+                convex_hull_verts = [v for v in ch['geom'] if isinstance(v, bmesh.types.BMVert)]
+                
+                if hull_vertex_group is not None:
+                    bm_processed.verts.ensure_lookup_table()
+                    for vert in convex_hull_verts:
+                        vert[deform_layer_new][hull_vertex_group] = 1.0
 
-                # Add the processed hull to the new main object, which will store all of them
-                bmesh_join(bm_processed, bm_hull)
                 total_hull_count += 1
-                bm_hull.clear()
-                bm_hull.free()
 
             bm_processed.to_mesh(me)
             me.update()
@@ -620,31 +630,26 @@ def force_convex(objs, preserve_weights = False):
             bpy.ops.mesh.normals_make_consistent(inside=False)
             bpy.ops.mesh.select_all(action='DESELECT')
             bpy.ops.object.mode_set(mode='OBJECT')
+            bpy.ops.mesh.customdata_custom_splitnormals_clear()
+            obj.shape_key_clear()
 
-    # For any rigged collision, use the Data Transfer modifier to copy the original weights back
+            # Remove unnecessary and/or corrupted data like UVs and color attributes
+            uv_amount = len(obj.data.uv_layers)
+            if uv_amount > 0:
+                while(uv_amount) > 0:
+                    obj.data.uv_layers.remove(obj.data.uv_layers[0])
+                    uv_amount -= 1
+            if bpy.app.version >= (3, 6, 0):
+                attributes = [attr.name for attr in obj.data.attributes if attr.is_required == False]
+                if len(attributes) > 0:
+                    for attr in attributes:
+                        obj.data.attributes.remove(obj.data.attributes[attr])
+
+
+    # Final weights cleanup for any rigged collision
     if preserve_weights:
         if len(rigged_objs) > 0:
-            for rigged_obj in rigged_objs:
-                bpy.ops.object.select_all(action='DESELECT')
-                rigged_obj.select_set(True)
-                bpy.context.view_layer.objects.active = rigged_obj
-                data_transfer_modifier = rigged_obj.modifiers.new(name="CopyWeights",type="DATA_TRANSFER")
-                data_transfer_modifier.object = duplicates[rigged_obj.name]
-                data_transfer_modifier.use_vert_data = True
-                data_transfer_modifier.data_types_verts = {'VGROUP_WEIGHTS'}
-                data_transfer_modifier.layers_vgroup_select_src = 'ALL'
-                data_transfer_modifier.layers_vgroup_select_dst = 'NAME'
-                bpy.ops.object.datalayout_transfer(modifier="CopyWeights")
-
-                if bpy.app.version >= (3, 2, 0):
-                    with bpy.context.temp_override(object=rigged_obj):
-                        bpy.ops.object.modifier_apply(modifier="CopyWeights")
-                else:
-                    bpy.ops.object.modifier_apply(modifier="CopyWeights")
-
-                bpy.data.objects.remove(duplicates[rigged_obj.name])
-                del duplicates[rigged_obj.name]
-
+            for obj in rigged_objs:
                 # Purge any unassigned weights
                 groups_to_remove = []
                 for vertex_group in obj.vertex_groups:
@@ -2036,6 +2041,7 @@ class GenerateFromWeights(bpy.types.Operator):
                 obj_phys = bpy.context.active_object
                 obj_phys.name = obj.name + "_phys"
 
+                bpy.ops.object.convert(target='MESH')
                 bpy.ops.object.make_single_user(object=True, obdata=True)
                 bpy.ops.object.transform_apply(
                     location=True, rotation=True, scale=True)
@@ -2150,6 +2156,10 @@ class GenerateFromWeights(bpy.types.Operator):
                 bpy.ops.mesh.mark_seam(clear=True)
                 bpy.ops.object.mode_set(mode='OBJECT')
                 bpy.ops.object.shade_smooth()
+
+                # Re-add armature modifier
+                armature_modifier = obj_phys.modifiers.new(name="ArmaturePhys",type="ARMATURE")
+                armature_modifier.object = obj.parent
 
                 # Setup collection
                 if (obj_phys.name.lower()) in bpy.data.collections.keys():
