@@ -4,6 +4,8 @@ import mathutils
 import re
 import os
 import shutil
+import time
+import numpy as np
 addon_path = os.path.dirname(os.path.abspath(__file__))
 from .PyVMF import *
 
@@ -11,7 +13,7 @@ bl_info = {
     "name": "Source Engine Collision Tools",
     "description": "Quickly generate and optimize collision models for use in Source Engine",
     "author": "Theanine3D",
-    "version": (3, 1, 1),
+    "version": (3, 2, 0),
     "blender": (3, 0, 0),
     "category": "Mesh",
     "location": "Properties -> Object Properties",
@@ -259,6 +261,8 @@ def get_avg_length(obj):
         y2 = (v0.co[1] - v1.co[1]) ** 2
         z2 = (v0.co[2] - v1.co[2]) ** 2
         lengths.append((x2 + y2 + z2) ** 0.5)
+    if len(lengths) == 0:
+        return 0.0
     average_length = sum(lengths) / len(lengths)
     return average_length
 
@@ -388,10 +392,10 @@ def generate_QC_lines(obj, models_dir, mats_dir, surfaceprop):
     # Check if any of the override commands already exist, and if so, replace the existing one with the override
     existing_overrides = []
     for override in qc_overrides.keys():
-        for line in QC_template:
-            if override in line:
-                QC_template[QC_template.index(line)] = f'{override} {str(qc_overrides[override])}\n'
-                # line = f"test lol {str(2+4)}"
+        for index, line in enumerate(QC_template):
+            # Match the command word exactly, so e.g. a "$body" override doesn't also match the "$bodygroup" line
+            if line.strip().split(" ")[0] == override:
+                QC_template[index] = f'{override} {str(qc_overrides[override])}\n'
                 existing_overrides.append(override)
 
     # Clean up the override list by removing the ones that already existed in the template
@@ -437,22 +441,18 @@ def generate_QCI_lines(obj, surfaceprop, root_bone, vertex_groups):
 
 
 def bmesh_walk_hull(vert):
-    ''' Walk all un-tagged linked verts '''
-    vert.tag = True
-    yield(vert)
-
-    linked_verts = list()
-    try:
-        for e in vert.link_edges:
-            if not e.other_vert(vert).tag:
-                linked_verts.append(e.other_vert(vert))
-    except:
-        pass
-
-    for v in linked_verts:
+    ''' Walk all un-tagged linked verts, iteratively, to avoid hitting the recursion limit on large hulls '''
+    stack = [vert]
+    while stack:
+        v = stack.pop()
         if v.tag:
             continue
-        yield from bmesh_walk_hull(v)
+        v.tag = True
+        yield v
+        for e in v.link_edges:
+            other = e.other_vert(v)
+            if not other.tag:
+                stack.append(other)
 
 
 def bmesh_get_hulls(bm, verts=[]):
@@ -509,6 +509,17 @@ def get_3d_viewport():
         if area.type == 'VIEW_3D':
                 return area
     return None
+
+def purge_unassigned_vertex_groups(obj):
+    '''Removes any vertex groups that have no vertices assigned to them with a weight above zero'''
+    used_groups = set()
+    for vert in obj.data.vertices:
+        for assigned_group in vert.groups:
+            if assigned_group.weight > 0:
+                used_groups.add(assigned_group.group)
+    for group_name in [vg.name for vg in obj.vertex_groups if vg.index not in used_groups]:
+        obj.vertex_groups.remove(obj.vertex_groups[group_name])
+
 
 def force_convex(objs, preserve_weights = False):
     if len(objs) >= 1:
@@ -650,20 +661,7 @@ def force_convex(objs, preserve_weights = False):
     if preserve_weights:
         if len(rigged_objs) > 0:
             for obj in rigged_objs:
-                # Purge any unassigned weights
-                groups_to_remove = []
-                for vertex_group in obj.vertex_groups:
-                    index = vertex_group.index
-                    amount_assigned = 0
-                    for vert in obj.data.vertices:
-                        if len(vert.groups) > 0:
-                            for assigned_group in vert.groups:
-                                if assigned_group.weight > 0 and assigned_group.group == index:
-                                        amount_assigned += 1
-                    if amount_assigned == 0:
-                        groups_to_remove.append(vertex_group.name)
-                for group in groups_to_remove:
-                    obj.vertex_groups.remove(obj.vertex_groups[group])        
+                purge_unassigned_vertex_groups(obj)
 
     return total_hull_count
 
@@ -2093,11 +2091,8 @@ class GenerateFromWeights(bpy.types.Operator):
                     bpy.ops.object.mode_set(mode="EDIT")
                     bpy.ops.mesh.select_all(action='DESELECT')
                     bpy.ops.object.mode_set(mode="OBJECT")
-                    for vert in obj_phys.data.vertices:
-                        if len(vert.groups) > 0:
-                            for marked_vert in vertex_groups[marked_group]:
-                                if vert.index == marked_vert:
-                                    vert.select = True
+                    for vert_index in vertex_groups[marked_group]:
+                        obj_phys.data.vertices[vert_index].select = True
 
                     # Convert the new loose piece into a convex hull
                     bpy.ops.object.mode_set(mode="EDIT")
@@ -2273,10 +2268,12 @@ class SplitUpSrcCollision(bpy.types.Operator):
                     if "_part_" in c.name:
                         display_msg_box(
                             "A selected collision mesh is inside a collection with '_part_' inside the name, indicating it's already split up. Rename the collection so that it ends in '_phys', and try again.", "Error", "ERROR")
+                        bpy.context.preferences.edit.use_global_undo = original_undo
                         return {'FINISHED'}
                 if "_part_" in obj.name:
                     display_msg_box(
                         "A collision model you're trying to split up already has '_part_' in its name, indicating that it's already been split up.\nRename the mesh object first so its name ends in '_phys' and try again.", "Error", "ERROR")
+                    bpy.context.preferences.edit.use_global_undo = original_undo
                     return {'FINISHED'}
 
                 bpy.ops.object.mode_set(mode='OBJECT')
@@ -2483,6 +2480,7 @@ class Cleanup_MergeAdjacentSimilars(bpy.types.Operator):
                 if initial_hull_count == 1:
                     display_msg_box(
                         "There is only one hull remaining in this collision mesh. Aborting...", "Info", "INFO")
+                    bpy.context.preferences.edit.use_global_undo = original_undo
                     return {'FINISHED'}
 
                 i = 0
@@ -2505,43 +2503,26 @@ class Cleanup_MergeAdjacentSimilars(bpy.types.Operator):
                             if facecount2 >= (facecount1 * similarity_threshold) and facecount2 <= (facecount1 * (1+(1-similarity_threshold))):
 
                                 # Get center coordinate of both hulls
-                                bm1_origin_x = (
-                                    sum(v.co[0] for v in bm2.verts)) / len(bm2.verts)
-                                bm1_origin_y = (sum(v.co[0]
-                                                for v in bm2.verts)) / 3
-                                bm1_origin_z = (sum(v.co[0]
-                                                for v in bm2.verts)) / 3
-                                bm1_origin = mathutils.Vector((bm1_origin_x, bm1_origin_y, bm1_origin_z))
+                                bm1_origin = mathutils.Vector((
+                                    sum(v.co[0] for v in bm1.verts) / len(bm1.verts),
+                                    sum(v.co[1] for v in bm1.verts) / len(bm1.verts),
+                                    sum(v.co[2] for v in bm1.verts) / len(bm1.verts)))
 
-                                bm2_origin_x = (
-                                    sum(v.co[0] for v in bm2.verts)) / len(bm2.verts)
-                                bm2_origin_y = (sum(v.co[0]
-                                                for v in bm2.verts)) / 3
-                                bm2_origin_z = (sum(v.co[0]
-                                                for v in bm2.verts)) / 3
                                 bm2_origin = mathutils.Vector((
-                                    bm2_origin_x, bm2_origin_y, bm2_origin_z))
+                                    sum(v.co[0] for v in bm2.verts) / len(bm2.verts),
+                                    sum(v.co[1] for v in bm2.verts) / len(bm2.verts),
+                                    sum(v.co[2] for v in bm2.verts) / len(bm2.verts)))
 
-                                # # Get distance between the two center coordinates
+                                # Get distance between the two center coordinates
                                 distance = (bm1_origin - bm2_origin).length
 
                                 # Check if hulls are close together
                                 if distance < ((vol1 ** (1/3)) * 2.5):
 
-                                    # Check if any verts overlap
-                                    bm1_verts = [list(v.co) for v in bm1.verts]
-                                    bm2_verts = [list(v.co) for v in bm2.verts]
-
-                                    for v in bm1_verts:
-                                        v[0] = round(v[0], 2)
-                                        v[1] = round(v[1], 2)
-                                        v[2] = round(v[2], 2)
-                                    for v in bm2_verts:
-                                        v[0] = round(v[0], 2)
-                                        v[1] = round(v[1], 2)
-                                        v[2] = round(v[2], 2)
-                                    overlap = [
-                                        v for v in bm1_verts if v in bm2_verts]
+                                    # Check if any verts overlap, comparing rounded coordinates as sets
+                                    bm1_verts = {(round(v.co[0], 2), round(v.co[1], 2), round(v.co[2], 2)) for v in bm1.verts}
+                                    bm2_verts = {(round(v.co[0], 2), round(v.co[1], 2), round(v.co[2], 2)) for v in bm2.verts}
+                                    overlap = bm1_verts & bm2_verts
 
                                     # If any verts overlapped, then the hulls are adjacent!
                                     if len(overlap) > 0:
@@ -2583,7 +2564,7 @@ class Cleanup_MergeAdjacentSimilars(bpy.types.Operator):
                                         break
 
                 # Get quick count of how many hulls were merged
-                merged_count = len([h[0] for h in hull_bm_list if h[0] == None])
+                merged_count += len([h[0] for h in hull_bm_list if h[0] == None])
 
                 # Re-add hulls that were never merged
                 unmerged_hulls = [
@@ -2834,12 +2815,9 @@ class Cleanup_ProcessInsideHulls(bpy.types.Operator):
 
                     def check_inside_bbox(h):
                         loc = h.location
-                        if hull_bbox_min[0] < loc[0] and hull_bbox_max[0] > loc[0]:
-                            if hull_bbox_min[1] < loc[1] and hull_bbox_max[1] > loc[1]:
-                                if hull_bbox_min[2] < loc[2] and hull_bbox_max[2] > loc[2]:
-                                    return True
-                        else:
-                            return False
+                        return (hull_bbox_min[0] < loc[0] < hull_bbox_max[0]
+                                and hull_bbox_min[1] < loc[1] < hull_bbox_max[1]
+                                and hull_bbox_min[2] < loc[2] < hull_bbox_max[2])
 
                     # Create list of hulls that are smalller than this hull and within the outer hull's bounding box
                     hulls_to_check = [h for h in hulls if h != outer_hull and h.dimensions <
@@ -3275,19 +3253,7 @@ class GenerateRagdollQCI(bpy.types.Operator):
                         break
                 
             # Purge any unassigned weights
-            groups_to_remove = []
-            for vertex_group in obj.vertex_groups:
-                index = vertex_group.index
-                amount_assigned = 0
-                for vert in obj.data.vertices:
-                    if len(vert.groups) > 0:
-                        for assigned_group in vert.groups:
-                            if assigned_group.weight > 0 and assigned_group.group == index:
-                                    amount_assigned += 1
-                if amount_assigned == 0:
-                    groups_to_remove.append(vertex_group.name)
-            for group in groups_to_remove:
-                obj.vertex_groups.remove(obj.vertex_groups[group])        
+            purge_unassigned_vertex_groups(obj)
 
             with open(f"{QC_folder}{obj.name}.qci", 'w') as qci_file:
                 qci_file.writelines(generate_QCI_lines(
@@ -3357,10 +3323,9 @@ class ClearQCOverrides(bpy.types.Operator):
 
             qc_overrides_keys = [prop for prop in obj.keys() if not prop.startswith("_RNA_UI") and prop[0] == "$"]
 
-            for obj in objs:
-                for override in qc_overrides_keys:
-                    del obj[override]
-                    num_deleted += 1
+            for override in qc_overrides_keys:
+                del obj[override]
+                num_deleted += 1
 
         display_msg_box(f"{str(num_deleted)} override(s) deleted from {len(objs)} object(s).", "Info", "INFO")
 
@@ -3457,12 +3422,9 @@ class UpdateVMF(bpy.types.Operator):
         # Open VMF file for reading and parse data
         with open(VMF_path, 'r+') as vmf_file:
 
-            total_length = len(vmf_file.readlines())
-
-            print(str(total_length) + " lines loaded from VMF file.")
-            vmf_file.seek(0)
-
             contents = vmf_file.read()
+
+            print(str(len(contents.splitlines())) + " lines loaded from VMF file.")
 
             # Make sure it's a real VMF file first
             if "versioninfo" not in contents[0:30]:
@@ -3483,7 +3445,8 @@ class UpdateVMF(bpy.types.Operator):
 
             # If removal mode is enabled, remove entities containing _part_
             if remove_on:
-                new_entity_list = entities
+                # Work on a copy - removing from the list being iterated would skip entities
+                new_entity_list = list(entities)
                 removed_count = 0
                 for ent in entities:
                     if "_phys_part_" in ent:
@@ -3594,12 +3557,9 @@ class CleanDuplicateVMF(bpy.types.Operator):
         # Open VMF file for reading and parse data
         with open(VMF_path, 'r+') as vmf_file:
 
-            total_length = len(vmf_file.readlines())
-
-            print(str(total_length) + " lines loaded from VMF file.")
-            vmf_file.seek(0)
-
             contents = vmf_file.read()
+
+            print(str(len(contents.splitlines())) + " lines loaded from VMF file.")
 
             # Make sure it's a real VMF file first
             if "versioninfo" not in contents[0:30]:
@@ -3696,15 +3656,14 @@ class ExportVMF(bpy.types.Operator):
                 mesh = obj_phys.data
 
                 # Snap vertices to grid scale of 1
-                for vert in mesh.vertices:
-                    vert.co.x = round(vert.co.x)
-                    vert.co.y = round(vert.co.y)
-                    vert.co.z = round(vert.co.z)
+                coords = np.empty(len(mesh.vertices) * 3, dtype=np.float32)
+                mesh.vertices.foreach_get("co", coords)
+                mesh.vertices.foreach_set("co", np.round(coords))
 
                 # Update the mesh
                 mesh.update()
 
-                force_convex([obj])
+                force_convex([obj_phys])
 
                 # Begin Bmesh processing
                 bm = bmesh.new()
@@ -3792,7 +3751,6 @@ class ExportVMF(bpy.types.Operator):
 
                 total_solids_count += len(solids_to_add)
 
-                import time
                 export_path = os.path.join(bpy.path.abspath(vmf_export_dir), time.strftime("%Y%m%d-%H%M%S")) + "" + f" {str(obj_index)}.vmf"
                 print("Export path: " + export_path + "\n")
 
